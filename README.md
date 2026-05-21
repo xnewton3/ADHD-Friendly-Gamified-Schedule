@@ -137,11 +137,12 @@ accessCode: 'your-new-code',
 
 ### One‑time quests
 
-> Set schedule to **One‑time** when creating/editing a quest. After completion, it will be deleted automatically at midnight.
+ Set schedule to **One‑time** when creating/editing a quest. After completion, it will be deleted automatically at midnight.
 
-### Progressive quest chains (e.g., "Drink water (1x)", "(2x)", …) 
-\
+### Progressive quest chains (e.g., "Drink water (1x)", "(2x)", …)
+
 The system automatically groups quests whose names end with `(1x)`, `(2x)`, etc. Only the lowest‑numbered incomplete quest in the chain is shown. Completing it unlocks the next step.
+
 ---
 ## 🧑‍💻 Development / Customisation
 
