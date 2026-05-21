@@ -1,0 +1,56 @@
+{
+  "name": "Quest Tracker - Player 1",
+  "short_name": "Quest Tracker",
+  "description": "ADHD-friendly quest tracker with chocolate rewards",
+  "start_url": "/?v=2",
+  "display": "fullscreen",
+  "background_color": "#1a1a1a",
+  "theme_color": "#4a7c59",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon.tiff",
+      "sizes": "any",
+      "type": "image/tiff",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%231a1a1a' width='540' height='720'/><text x='270' y='100' font-size='48' font-weight='bold' text-anchor='middle' fill='%234a7c59'>Quest Tracker</text></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["productivity"],
+  "shortcuts": [
+    {
+      "name": "New Quest",
+      "short_name": "Add Quest",
+      "description": "Add a new quest to your tracker",
+      "url": "/?action=add-quest",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect fill='%234a7c59' width='96' height='96'/><text x='48' y='65' font-size='50' text-anchor='middle' fill='%23e6d5b8'>➕</text></svg>",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Shop",
+      "short_name": "Rewards",
+      "description": "View chocolate rewards",
+      "url": "/?action=shop",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect fill='%234a7c59' width='96' height='96'/><text x='48' y='65' font-size='50' text-anchor='middle' fill='%23e6d5b8'>🏪</text></svg>",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}

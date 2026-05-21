@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a1a">
+    <title>Quest Manager</title>
+    <script src="webauthn.js" data-cfasync="false"></script>
+    <style>
+        /* (Your existing styles - unchanged) */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --jade: #4a7c59;
+            --jade-dark: #2d4a37;
+            --olive: #6b7d54;
+            --olive-light: #8a9968;
+            --dark-grey: #1a1a1a;
+            --dark-grey-2: #2a2a2a;
+            --dark-grey-3: #3a3a3a;
+            --cream: #e6d5b8;
+            --accent: #d4a574;
+            --success: #52b788;
+            --warning: #e8971f;
+            --error: #d62828;
+        }
+        html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        .notch-fix { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
+        .notch-fix-bottom { position: fixed; bottom: 0; left: 0; right: 0; height: env(safe-area-inset-bottom); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding: 0.5rem 0.5rem 0.5rem max(0.5rem, env(safe-area-inset-left)); border-bottom: 2px solid var(--jade); }
+        .header h1 { color: var(--jade); font-size: 2rem; }
+        .header-actions { display: flex; gap: 1rem; }
+        button { padding: 0.75rem 1.5rem; background: var(--jade); color: var(--dark-grey); border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.3s; }
+        button:hover { background: var(--olive-light); transform: translateY(-2px); }
+        button.secondary { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); }
+        button.danger { background: var(--error); color: white; }
+        .settings-panel { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+        .settings-panel h2 { color: var(--jade); margin-bottom: 1rem; font-size: 1.25rem; }
+        .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        .form-group label { color: var(--cream); font-weight: 500; font-size: 0.9rem; }
+        .form-group input, .form-group select { padding: 0.75rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); font-size: 1rem; }
+        .form-group-hint { font-size: 0.75rem; color: var(--olive-light); margin-top: 0.25rem; }
+        .quests-panel { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; margin-bottom: 2rem; }
+        .quests-header { background: var(--jade-dark); padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; }
+        .quests-header h2 { color: var(--cream); margin: 0; }
+        .quests-list { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; max-height: 600px; overflow-y: auto; }
+        .quest-row { display: grid; grid-template-columns: 40px 1fr 80px 100px 120px 80px 40px; gap: 0.75rem; align-items: center; padding: 0.75rem; background: var(--dark-grey-3); border-radius: 6px; border-left: 4px solid var(--olive); }
+        .quest-row.side { border-left-color: var(--accent); }
+        .drag-handle { cursor: grab; text-align: center; color: var(--olive-light); font-size: 1.2rem; }
+        .quest-name { word-break: break-word; cursor: pointer; }
+        .quest-name:hover { color: var(--jade); text-decoration: underline; }
+        .quest-type { background: var(--jade); color: var(--dark-grey); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-align: center; }
+        .quest-type.side { background: var(--accent); }
+        .quest-points-input, .quest-schedule, .quest-reminder { padding: 0.5rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); text-align: center; font-size: 0.85rem; }
+        .quest-edit, .quest-delete { background: var(--accent); color: var(--dark-grey); border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+        .quest-delete { background: var(--error); color: white; }
+        .add-quest-section { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+        .add-quest-section h3 { color: var(--jade); margin-bottom: 1rem; }
+        .add-quest-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+        .add-quest-form input, .add-quest-form select { padding: 0.75rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); font-family: inherit; }
+        .nav-back { display: inline-block; margin-bottom: 1.5rem; }
+        .nav-back button { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); }
+        .feed-item { background: var(--dark-grey-3); border-radius: 6px; margin-bottom: 0.75rem; padding: 0.75rem; }
+        .feed-item strong { color: var(--cream); }
+        .feed-item small { color: var(--olive-light); word-break: break-all; }
+        .add-feed-form, .add-shop-form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+        .add-feed-form input, .add-shop-form input { flex: 1; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); padding: 0.75rem; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-overlay.hidden { display: none; }
+        .modal-content { background: var(--dark-grey-2); border: 2px solid var(--jade); border-radius: 12px; padding: 2rem; width: 90%; max-width: 500px; }
+        .modal-content h3 { color: var(--jade); margin-bottom: 1rem; }
+        .modal-content input, .modal-content select { width: 100%; padding: 0.75rem; margin-bottom: 1rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); }
+        .modal-buttons { display: flex; gap: 1rem; justify-content: flex-end; }
+        .calendar-quest-item {
+            background: var(--dark-grey-3);
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-left: 4px solid var(--jade);
+        }
+        .calendar-quest-name { font-weight: 600; color: var(--cream); }
+        .calendar-quest-details { font-size: 0.75rem; color: var(--olive-light); margin-top: 0.25rem; }
+        .calendar-quest-points {
+            display: inline-block;
+            background: var(--jade);
+            color: var(--dark-grey);
+            padding: 0.2rem 0.5rem;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        @media (max-width: 1200px) { .quest-row { grid-template-columns: 40px 1fr 60px 40px 40px; } .quest-schedule, .quest-points-input, .quest-reminder { display: none; } }
+        @media (max-width: 900px) { .quest-row { grid-template-columns: 40px 1fr 40px 40px; } .quest-type { display: none; } }
+        @media (max-width: 600px) { .add-feed-form, .add-shop-form { flex-direction: column; } }
+    </style>
+</head>
+<body>
+<div class="notch-fix"></div>
+<div class="container">
+    <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Quests</button></div>
+    <div class="header"><h1>⚙️ Quest Manager</h1><div class="header-actions"><button onclick="manager.saveAll()">💾 Save All</button><button onclick="window.location.reload()">🔄 Refresh</button></div></div>
+
+    <div class="settings-panel">
+        <h2>🏪 Reward Settings</h2>
+        <div class="settings-grid">
+            <div class="form-group"><label>Small Reward Points 🎁</label><input type="number" id="smallRewardPts" min="1" value="10"></div>
+            <div class="form-group"><label>Big Reward Points 🎁</label><input type="number" id="bigRewardPts" min="1" value="25"></div>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <h2>🛒 Custom Shop Items</h2>
+        <div id="shopItemsList"></div>
+        <div class="add-shop-form">
+            <input type="text" id="newShopName" placeholder="🏷️ Item name">
+            <input type="number" id="newShopCost" placeholder="⭐️ Points" min="1" value="10">
+            <button onclick="manager.addShopItem()">➕ Add</button>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <h2>👤 Profile</h2>
+        <div class="settings-grid"><div class="form-group"><label>Profile Picture</label><input type="file" id="avatarInput" accept="image/*" onchange="manager.updateAvatar(event)"></div></div>
+    </div>
+
+    <div class="settings-panel">
+        <h2>🔐 Passkey / Security</h2>
+        <div id="passkeyStatus" style="margin-bottom:1rem;font-size:0.9rem;color:var(--olive-light);"></div>
+        <button class="danger" onclick="manager.resetPasskey()">🗑️ Remove Passkey</button>
+    </div>
+
+    <div class="add-quest-section">
+        <h3>➕ Add New Quest</h3>
+        <div class="add-quest-form">
+            <input type="text" id="newQuestName" placeholder="🏷️ Quest name">
+            <select id="newQuestType"><option value="main">Main Quest</option><option value="side">Side Quest</option></select>
+            <input type="number" id="newQuestPoints" min="1" value="1" placeholder="⭐️ Points">
+            <input type="text" id="newQuestReminder" placeholder="⏰ Reminder time (e.g., 9:00 am)">
+            <input type="text" id="newQuestSchedule" placeholder="🗓️ Daily/Monday/2nd & 4th Saturday">
+        </div>
+        <button onclick="manager.addQuest()">Add Quest</button>
+    </div>
+
+    <div class="quests-panel">
+        <div class="quests-header"><h2>🎪 Main Quests</h2><span style="color:var(--olive-light); font-size:0.8rem;">Drag to reorder</span></div>
+        <div class="quests-list" id="mainQuestsList"></div>
+    </div>
+
+    <div class="quests-panel">
+        <div class="quests-header" style="background: var(--accent);"><h2>⭐ Side Quests</h2><span style="color:var(--dark-grey); font-size:0.8rem;">Drag to reorder</span></div>
+        <div class="quests-list" id="sideQuestsList"></div>
+    </div>
+
+    <div class="settings-panel">
+        <h2>📅 Calendar Feeds (iCal)</h2>
+        <div id="calendarFeedsList"></div>
+        <div class="add-feed-form">
+            <input type="text" id="newFeedName" placeholder="Feed name">
+            <input type="url" id="newFeedUrl" placeholder="iCal URL (.ics)">
+            <button onclick="manager.addCalendarFeed()">➕ Add</button>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 style="margin:0;">📅 Upcoming Calendar Events (next 30 days)</h2>
+            <button onclick="manager.refreshCalendarQuests()" style="padding:0.25rem 0.75rem; font-size:0.8rem;">🔄 Refresh</button>
+        </div>
+        <div id="calendarQuestsList" style="color:var(--olive-light); font-size:0.9rem;"></div>
+        <div class="form-group-hint">Events need <code>DESCRIPTION:ical</code> in their calendar entry to appear here.</div>
+    </div>
+</div>
+
+<div id="editModal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>✏️ Edit Quest</h3>
+        <input type="text" id="editQuestName" placeholder="🏷️ Quest name">
+        <select id="editQuestType"><option value="main">Main Quest</option><option value="side">Side Quest</option></select>
+        <input type="number" id="editQuestPoints" min="1" placeholder="⭐️ Points">
+        <input type="text" id="editQuestReminder" placeholder="⏰ Reminder time (e.g., 9:00 am)">
+        <input type="text" id="editQuestSchedule" placeholder="🗓️ Schedule">
+        <div class="modal-buttons"><button class="secondary" onclick="manager.closeEditModal()">Cancel</button><button onclick="manager.saveEditQuest()">Save</button></div>
+    </div>
+</div>
+
+<script data-cfasync="false">
+    const manager = {
+        data: null,
+        settings: null,
+        quests: [],
+        shopItems: [],
+        calendarFeeds: [],
+        draggedIndex: null,
+        editingIndex: null,
+
+        async init() {
+            await this.loadData();
+            this.renderQuests();
+            this.renderPasskeyStatus();
+            this.renderCalendarFeeds();
+            await this.renderCalendarQuests();  // load upcoming calendar events
+            this.renderShopItems();
+        },
+
+        async loadData() {
+            try {
+                const res = await fetch('api.php');
+                if (res.ok) {
+                    const parsed = await res.json();
+                    this.data = parsed.user;
+                    this.settings = parsed.settings;
+                    this.quests = parsed.quests || [];
+                    this.shopItems = parsed.shopItems || [];
+                    this.calendarFeeds = parsed.calendarFeeds || [];
+                    if (this.settings) {
+                        document.getElementById('smallRewardPts').value = this.settings.small_reward_points || 10;
+                        document.getElementById('bigRewardPts').value = this.settings.big_reward_points || 25;
+                    }
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async saveData() {
+            if (!this.data) return;
+
+            const smallPts = parseInt(document.getElementById('smallRewardPts').value) || 10;
+            const bigPts = parseInt(document.getElementById('bigRewardPts').value) || 25;
+            if (this.settings) {
+                this.settings.small_reward_points = smallPts;
+                this.settings.big_reward_points = bigPts;
+            }
+
+            const payload = {
+                user: this.data,
+                settings: this.settings,
+                quests: this.quests,
+                shopItems: this.shopItems,
+                calendarFeeds: this.calendarFeeds,
+                passkeyRegistered: true,
+                history: []
+            };
+
+            localStorage.setItem('questTrackerData', JSON.stringify(payload));
+
+            try {
+                const res = await fetch('api.php', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    console.log('✅ Data saved to server');
+                    alert('💾 All changes saved!');
+                } else {
+                    console.error('Save failed:', res.status);
+                    alert('❌ Failed to save. Check console.');
+                }
+            } catch(e) {
+                console.warn('Could not save to server:', e);
+                alert('❌ Error saving. Check console.');
+            }
+        },
+
+        renderQuests() {
+            const mainContainer = document.getElementById('mainQuestsList');
+            const sideContainer = document.getElementById('sideQuestsList');
+            if (mainContainer) {
+                mainContainer.innerHTML = '';
+                const mainQuests = this.quests.filter(q => q.type === 'main' && !q.from_calendar);
+                mainQuests.forEach((quest, index) => {
+                    const originalIndex = this.quests.findIndex(q => q.id === quest.id);
+                    const row = this.createQuestRow(quest, originalIndex);
+                    mainContainer.appendChild(row);
+                });
+            }
+            if (sideContainer) {
+                sideContainer.innerHTML = '';
+                const sideQuests = this.quests.filter(q => q.type === 'side' && !q.from_calendar);
+                sideQuests.forEach((quest, index) => {
+                    const originalIndex = this.quests.findIndex(q => q.id === quest.id);
+                    const row = this.createQuestRow(quest, originalIndex);
+                    sideContainer.appendChild(row);
+                });
+            }
+        },
+
+        createQuestRow(quest, index) {
+            const row = document.createElement('div');
+            row.className = 'quest-row' + (quest.type === 'side' ? ' side' : '');
+            row.draggable = true;
+            row.dataset.index = index;
+            row.innerHTML = `
+                <div class="drag-handle">⋮⋮</div>
+                <div class="quest-name" onclick="manager.openEditModal(${index})">${this.escapeHtml(quest.name)}</div>
+                <div class="quest-type${quest.type === 'side' ? ' side' : ''}">${quest.type === 'main' ? 'Main' : 'Side'}</div>
+                <input type="number" class="quest-points-input" value="${quest.points || 1}" onchange="manager.updatePoints(${index}, this.value)">
+                <input type="text" class="quest-schedule" value="${this.escapeHtml(quest.schedule || 'Daily')}" onchange="manager.updateSchedule(${index}, this.value)">
+                <input type="text" class="quest-reminder" placeholder="9:00 am" value="${quest.reminder_time || ''}" onchange="manager.updateReminder(${index}, this.value)">
+                <button class="quest-edit" onclick="manager.openEditModal(${index})">✏️</button>
+                <button class="quest-delete" onclick="manager.deleteQuest(${index})">🗑️</button>
+            `;
+            row.addEventListener('dragstart', (e) => { this.draggedIndex = index; e.dataTransfer.effectAllowed = 'move'; });
+            row.addEventListener('dragover', (e) => e.preventDefault());
+            row.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (this.draggedIndex !== null && this.draggedIndex !== index) {
+                    const dragged = this.quests[this.draggedIndex];
+                    this.quests.splice(this.draggedIndex, 1);
+                    this.quests.splice(index, 0, dragged);
+                    this.saveData();
+                    this.renderQuests();
+                }
+                this.draggedIndex = null;
+            });
+            return row;
+        },
+
+        openEditModal(index) {
+            this.editingIndex = index;
+            const quest = this.quests[index];
+            document.getElementById('editQuestName').value = quest.name;
+            document.getElementById('editQuestType').value = quest.type;
+            document.getElementById('editQuestPoints').value = quest.points || 1;
+            document.getElementById('editQuestSchedule').value = quest.schedule || 'Daily';
+            document.getElementById('editQuestReminder').value = quest.reminder_time || '';
+            document.getElementById('editModal').classList.remove('hidden');
+        },
+
+        closeEditModal() { document.getElementById('editModal').classList.add('hidden'); this.editingIndex = null; },
+
+        saveEditQuest() {
+            if (this.editingIndex === null) return;
+            const quest = this.quests[this.editingIndex];
+            quest.name = document.getElementById('editQuestName').value;
+            quest.type = document.getElementById('editQuestType').value;
+            quest.points = parseInt(document.getElementById('editQuestPoints').value) || 1;
+            quest.schedule = document.getElementById('editQuestSchedule').value || 'Daily';
+            quest.reminder_time = document.getElementById('editQuestReminder').value || null;
+            this.saveData()
+            this.closeEditModal();
+            this.renderQuests();
+            alert('✅ Quest updated!');
+        },
+
+        updateReminder(index, value) { this.quests[index].reminder_time = value || null; this.saveData(); },
+        escapeHtml(str) { return String(str || '').replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); },
+        updatePoints(index, value) { this.quests[index].points = Math.max(1, parseInt(value) || 1); this.saveData(); },
+        updateSchedule(index, value) { this.quests[index].schedule = value || 'Daily'; this.saveData(); },
+
+        deleteQuest(index) {
+            if (confirm(`Delete "${this.quests[index].name}"?`)) {
+                this.quests.splice(index, 1);
+                this.saveData();
+                this.renderQuests();
+            }
+        },
+
+        addQuest() {
+            const name = document.getElementById('newQuestName').value.trim();
+            const type = document.getElementById('newQuestType').value;
+            const points = parseInt(document.getElementById('newQuestPoints').value) || 1;
+            const schedule = document.getElementById('newQuestSchedule').value.trim() || 'Daily';
+            const reminderTime = document.getElementById('newQuestReminder').value.trim() || null;
+            if (!name) { alert('Enter a quest name!'); return; }
+            this.quests.push({
+                id: 'custom-' + Date.now(),
+                name, type, points, schedule, reminder_time: reminderTime,
+                completed: false, from_calendar: 0
+            });
+            this.saveData();
+            this.renderQuests();
+            document.getElementById('newQuestName').value = '';
+            document.getElementById('newQuestSchedule').value = '';
+            document.getElementById('newQuestReminder').value = '';
+            alert('✅ Quest added!');
+        },
+
+        async updateAvatar(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('avatar', file);
+            try {
+                const res = await fetch('api.php?action=avatar', { method: 'POST', body: formData });
+                if (res.ok) alert('✅ Avatar uploaded! Refresh to see it.');
+                else alert('❌ Upload failed');
+            } catch(e) { alert('Error uploading'); }
+        },
+
+        saveAll() { this.saveData(); alert('💾 All changes saved!'); },
+
+        renderPasskeyStatus() {
+            const el = document.getElementById('passkeyStatus');
+            if (!el) return;
+            const supported = WebAuthnHelper.isSupported();
+            const registered = WebAuthnHelper.isRegistered();
+            if (!supported) el.innerHTML = '❌ WebAuthn not supported.';
+            else if (registered) el.innerHTML = '✅ Passkey registered on this device.';
+            else el.innerHTML = '⚠️ No passkey registered.';
+        },
+
+        resetPasskey() {
+            if (!confirm('Remove passkey? You will be logged out.')) return;
+            WebAuthnHelper.reset();
+            alert('Passkey removed. Redirecting...');
+            window.location.href = 'index.html';
+        },
+
+        renderCalendarFeeds() {
+            const container = document.getElementById('calendarFeedsList');
+            if (!container) return;
+            if (!this.calendarFeeds.length) {
+                container.innerHTML = '<p style="color:var(--olive-light);">📭 No calendar feeds added yet.</p>';
+                return;
+            }
+            container.innerHTML = this.calendarFeeds.map((feed, index) => `
+                <div class="feed-item" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span><strong>${this.escapeHtml(feed.name)}</strong><br><small>${this.escapeHtml(feed.url)}</small></span>
+                    <button onclick="manager.removeCalendarFeed(${feed.id})" style="background:var(--error); color:white; padding:0.25rem 0.75rem;">🗑️</button>
+                </div>
+            `).join('');
+        },
+
+        async renderCalendarQuests() {
+            const container = document.getElementById('calendarQuestsList');
+            if (!container) return;
+
+            container.innerHTML = '<p style="color:var(--warning);">🔄 Loading calendar events...</p>';
+
+            try {
+                const feedsRes = await fetch('api.php?action=calendar_feeds');
+                let feeds = [];
+                if (feedsRes.ok) {
+                    const feedsData = await feedsRes.json();
+                    feeds = feedsData.feeds || [];
+                    console.log('Calendar feeds loaded:', feeds);
+                }
+
+                if (feeds.length === 0) {
+                    container.innerHTML = '<p style="color:var(--olive-light);">📭 No calendar feeds added yet.</p>';
+                    return;
+                }
+
+                let allEvents = [];
+                for (const feed of feeds) {
+                    console.log(`Fetching feed: ${feed.name} (${feed.url})`);
+                    try {
+                        const events = await this.fetchCalendarEvents(feed.url);
+                        console.log(`Feed ${feed.name} returned ${events.length} events`);
+                        allEvents.push(...events);
+                    } catch (e) {
+                        console.warn(`Failed to fetch feed ${feed.name}:`, e);
+                    }
+                }
+
+                if (allEvents.length === 0) {
+                    container.innerHTML = '<p style="color:var(--olive-light);">📅 No upcoming calendar events found (next 30 days).<br>Make sure events have <code>DESCRIPTION:ical</code>.</p>';
+                    return;
+                }
+
+                // Remove duplicates and sort
+                const uniqueEvents = [];
+                const seen = new Set();
+                for (const ev of allEvents) {
+                    const key = `${ev.uid || ev.summary}_${ev.start.toDateString()}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        uniqueEvents.push(ev);
+                    }
+                }
+                uniqueEvents.sort((a, b) => a.start - b.start);
+
+                container.innerHTML = uniqueEvents.map(event => {
+                    const eventDate = event.start.toDateString();
+                    const eventTime = event.start ? this.formatTime12hr(event.start) : '';
+                    return `
+                        <div class="calendar-quest-item" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                            <div style="flex: 1;">
+                                <div class="calendar-quest-name">📅 ${this.escapeHtml(event.summary || 'Untitled Event')}</div>
+                                <div class="calendar-quest-details">
+                                    📅 ${eventDate} ${eventTime ? `⏰ ${eventTime}` : ''}
+                                </div>
+                            </div>
+                            <div class="calendar-quest-points" style="flex-shrink: 0;">1 pt</div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                console.error('Failed to load calendar quests:', e);
+                container.innerHTML = '<p style="color:var(--error);">❌ Failed to load calendar events. Check console.</p>';
+            }
+        },
+
+        async fetchCalendarEvents(calendarUrl) {
+            if (!calendarUrl) return [];
+            try {
+                const proxyUrl = `api.php?action=ical_proxy&url=${encodeURIComponent(calendarUrl)}`;
+                console.log('Fetching iCal from proxy:', proxyUrl);
+                const response = await fetch(proxyUrl);
+                if (!response.ok) {
+                    console.error('Proxy responded with', response.status);
+                    return [];
+                }
+                const icalData = await response.text();
+                console.log('Received iCal data length:', icalData.length);
+                return this.parseICal(icalData);
+            } catch(e) {
+                console.warn('Failed to fetch calendar:', e);
+                return [];
+            }
+        },
+
+        parseICal(icalData) {
+            const events = [];
+            const lines = icalData.split(/\r?\n/);
+            let currentEvent = null;
+            let eventCount = 0;
+            let icalCount = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                while (lines[i+1] && lines[i+1].startsWith(' ')) {
+                    line += lines[i+1].trim();
+                    i++;
+                }
+
+                if (line === 'BEGIN:VEVENT') {
+                    currentEvent = {};
+                    eventCount++;
+                } else if (line === 'END:VEVENT' && currentEvent && currentEvent.summary) {
+                    // Debug log
+                    const hasIcal = currentEvent.description && currentEvent.description.toLowerCase().includes('ical');
+                    console.log(`Event ${eventCount}: "${currentEvent.summary}" | description: "${currentEvent.description}" | hasICAL: ${hasIcal}`);
+                    if (hasIcal) {
+                        icalCount++;
+                        events.push(currentEvent);
+                    }
+                    currentEvent = null;
+                } else if (currentEvent) {
+                    const colonIndex = line.indexOf(':');
+                    if (colonIndex === -1) continue;
+                    const key = line.substring(0, colonIndex).split(';')[0];
+                    let value = line.substring(colonIndex + 1);
+
+                    if (key === 'SUMMARY') {
+                        currentEvent.summary = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                    } else if (key === 'DESCRIPTION') {
+                        currentEvent.description = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                    } else if (key === 'DTSTART') {
+                        let dateStr = value;
+                        if (dateStr.includes(':')) {
+                            const parts = dateStr.split(':');
+                            dateStr = parts[parts.length - 1];
+                        }
+                        const startDate = this.parseICalDate(dateStr);
+                        if (startDate) currentEvent.start = startDate;
+                    } else if (key === 'DTEND') {
+                        let dateStr = value;
+                        if (dateStr.includes(':')) {
+                            const parts = dateStr.split(':');
+                            dateStr = parts[parts.length - 1];
+                        }
+                        const endDate = this.parseICalDate(dateStr);
+                        if (endDate) currentEvent.end = endDate;
+                    } else if (key === 'RRULE') {
+                        currentEvent.rrule = value;
+                    } else if (key === 'UID') {
+                        currentEvent.uid = value;
+                    }
+                }
+            }
+
+            console.log(`Total events: ${eventCount}, with ICAL flag: ${icalCount}`);
+
+            // Expand recurring events (weekly)
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const thirtyDaysLater = new Date(today);
+            thirtyDaysLater.setDate(today.getDate() + 30);
+            const expandedEvents = [];
+
+            for (const event of events) {
+                if (!event.start) continue;
+
+                if (event.rrule && event.rrule.includes('FREQ=WEEKLY')) {
+                    // Weekly recurrence
+                    let currentStart = new Date(event.start);
+                    const dayOfWeek = currentStart.getDay();
+                    const endDate = event.end ? new Date(event.end) : new Date(currentStart);
+                    const duration = endDate - currentStart;
+
+                    // Move to first occurrence on or after today
+                    while (currentStart < today) {
+                        currentStart.setDate(currentStart.getDate() + 7);
+                    }
+                    while (currentStart <= thirtyDaysLater) {
+                        const occurrenceEnd = new Date(currentStart.getTime() + duration);
+                        expandedEvents.push({
+                            summary: event.summary,
+                            start: new Date(currentStart),
+                            end: occurrenceEnd,
+                            uid: event.uid + '_' + currentStart.toISOString().slice(0,10),
+                            description: event.description
+                        });
+                        currentStart.setDate(currentStart.getDate() + 7);
+                    }
+                } else {
+                    // Single event or yearly (simplified)
+                    expandedEvents.push(event);
+                }
+            }
+
+            // Filter events within next 30 days
+            const upcomingEvents = [];
+            for (const event of expandedEvents) {
+                const expiryDate = event.end ? event.end : event.start;
+                if (expiryDate >= today && expiryDate <= thirtyDaysLater) {
+                    upcomingEvents.push({
+                        summary: event.summary,
+                        start: event.start,
+                        end: event.end,
+                        uid: event.uid,
+                        expires: expiryDate.toDateString()
+                    });
+                }
+            }
+
+            // Sort by start date
+            upcomingEvents.sort((a, b) => a.start - b.start);
+            console.log(`Upcoming events in next 30 days: ${upcomingEvents.length}`);
+            return upcomingEvents;
+        },
+
+        // Helper to parse iCal date string like "20260526T120000"
+        parseICalDate(dateStr) {
+            if (!dateStr.match(/^\d{8}(T\d{6})?$/)) return null;
+            const year = parseInt(dateStr.substring(0, 4));
+            const month = parseInt(dateStr.substring(4, 6)) - 1;
+            const day = parseInt(dateStr.substring(6, 8));
+            let hour = 0, minute = 0, second = 0;
+            if (dateStr.length >= 15 && dateStr.includes('T')) {
+                const timePart = dateStr.split('T')[1];
+                hour = parseInt(timePart.substring(0, 2));
+                minute = parseInt(timePart.substring(2, 4));
+                second = parseInt(timePart.substring(4, 6));
+            }
+            return new Date(year, month, day, hour, minute, second);
+        },
+
+        formatTime12hr(date) {
+            let hours = date.getHours();
+            const minutes = date.getMinutes();
+            const ampm = hours >= 12 ? 'pm' : 'am';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            const minutesStr = minutes.toString().padStart(2, '0');
+            return `${hours}:${minutesStr} ${ampm}`;
+        },
+
+        addCalendarFeed() {
+            const name = document.getElementById('newFeedName').value.trim();
+            const url = document.getElementById('newFeedUrl').value.trim();
+            if (!name || !url) { alert('Please enter both name and URL'); return; }
+            fetch('api.php?action=add_calendar_feed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, url })
+            }).then(() => {
+                this.loadData().then(() => {
+                    this.renderCalendarFeeds();
+                    this.renderCalendarQuests();
+                });
+                document.getElementById('newFeedName').value = '';
+                document.getElementById('newFeedUrl').value = '';
+                alert('✅ Feed added!');
+            }).catch(e => alert('Failed to add feed'));
+        },
+
+        removeCalendarFeed(id) {
+            if (confirm('Remove this feed?')) {
+                fetch(`api.php?action=delete_calendar_feed&id=${id}`, { method: 'DELETE' })
+                    .then(() => this.loadData().then(() => {
+                        this.renderCalendarFeeds();
+                        this.renderCalendarQuests();
+                    }));
+            }
+        },
+
+        async refreshCalendarQuests() {
+            const container = document.getElementById('calendarQuestsList');
+            container.innerHTML = '<p style="color:var(--warning);">🔄 Syncing calendar feeds...</p>';
+            await this.renderCalendarQuests();
+            alert('✅ Calendar events refreshed!');
+        },
+
+        renderShopItems() {
+            const container = document.getElementById('shopItemsList');
+            if (!container) return;
+            if (!this.shopItems.length) {
+                container.innerHTML = '<p style="color:var(--olive-light);">🏪 No shop items yet. Add some above!</p>';
+                return;
+            }
+            container.innerHTML = this.shopItems.map((item, index) => `
+                <div class="feed-item" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span><strong>${this.escapeHtml(item.name)}</strong> - ${item.cost} points</span>
+                    <div><button onclick="manager.editShopItem(${item.id})" style="background:var(--accent); padding:0.25rem 0.75rem; margin-right:0.5rem;">✏️</button><button onclick="manager.removeShopItem(${item.id})" style="background:var(--error); padding:0.25rem 0.75rem;">🗑️</button></div>
+                </div>
+            `).join('');
+        },
+
+        addShopItem() {
+            const name = document.getElementById('newShopName').value.trim();
+            const cost = parseInt(document.getElementById('newShopCost').value) || 10;
+            if (!name) { alert('Enter an item name!'); return; }
+            fetch('api.php?action=add_shop_item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, cost })
+            }).then(() => {
+                this.loadData().then(() => this.renderShopItems());
+                document.getElementById('newShopName').value = '';
+                document.getElementById('newShopCost').value = '10';
+                alert('✅ Shop item added!');
+            }).catch(e => alert('Failed to add item'));
+        },
+
+        editShopItem(id) {
+            const item = this.shopItems.find(i => i.id == id);
+            const newName = prompt('Edit item name:', item.name);
+            if (newName) item.name = newName;
+            const newCost = prompt('Edit point cost:', item.cost);
+            if (newCost && !isNaN(newCost)) item.cost = parseInt(newCost);
+            this.saveData();
+            this.renderShopItems();
+        },
+
+        removeShopItem(id) {
+            if (confirm('Remove this item?')) {
+                fetch(`api.php?action=delete_shop_item&id=${id}`, { method: 'DELETE' })
+                    .then(() => this.loadData().then(() => this.renderShopItems()));
+            }
+        }
+    };
+
+    manager.init();
+</script>
+<div class="notch-fix-bottom"></div>
+</body>
+</html>

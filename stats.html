@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a1a">
+    <title>Statistics - Quest Tracker</title>
+    <!-- Chart.js for activity graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --jade: #4a7c59;
+            --jade-dark: #2d4a37;
+            --olive: #6b7d54;
+            --olive-light: #8a9968;
+            --dark-grey: #1a1a1a;
+            --dark-grey-2: #2a2a2a;
+            --dark-grey-3: #3a3a3a;
+            --cream: #e6d5b8;
+            --accent: #d4a574;
+            --success: #52b788;
+        }
+        html, body { width: 100%; min-height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 2px solid var(--jade); padding-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
+        .header h1 { color: var(--jade); font-size: 2rem; }
+        .nav-back button, .reload-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: var(--dark-grey-2); padding: 1rem; border-radius: 12px; text-align: center; border-left: 4px solid var(--jade); }
+        .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+        .stat-label { font-size: 0.75rem; color: var(--olive-light); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.25rem; }
+        .stat-sub { font-size: 0.7rem; color: var(--success); margin-top: 0.25rem; }
+        .graph-container { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; margin-bottom: 2rem; }
+        .graph-container h2 { color: var(--jade); font-size: 1.25rem; margin-bottom: 1rem; }
+        canvas { max-height: 300px; width: 100%; }
+        .recent-list { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; }
+        .recent-list h2 { color: var(--jade); font-size: 1.25rem; margin-bottom: 1rem; }
+        .recent-item { padding: 0.75rem; border-bottom: 1px solid var(--dark-grey-3); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+        .recent-date { font-size: 0.8rem; color: var(--olive-light); min-width: 100px; }
+        .recent-desc { flex: 1; font-size: 0.9rem; }
+        .recent-points { font-weight: 600; color: var(--success); }
+        .empty-state { text-align: center; color: var(--olive-light); padding: 2rem; }
+        .error { color: #d62828; text-align: center; padding: 1rem; }
+        .login-box { background: var(--dark-grey-2); border-radius: 12px; padding: 2rem; max-width: 400px; margin: 2rem auto; text-align: center; }
+        .login-box input { width: 100%; padding: 0.75rem; margin-bottom: 1rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 6px; color: var(--cream); }
+        .login-box button { width: 100%; padding: 0.75rem; background: var(--jade); color: var(--dark-grey); border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .hidden { display: none; }
+        @media (max-width: 600px) {
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .recent-item { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header" id="statsHeader" style="display: none;">
+        <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Login</button></div>
+        <div><h1>📊 Statistics</h1></div>
+        <div><button class="reload-btn" onclick="location.reload()">🔄 Refresh</button></div>
+    </div>
+
+    <div id="loginSection" class="login-box">
+        <h3>🔐 Enter Access Code</h3>
+        <input type="password" id="accessCode" placeholder="Access code">
+        <button onclick="stats.checkAccess()">View Stats</button>
+        <div id="loginError" class="error"></div>
+    </div>
+
+    <div id="statsSection" class="hidden">
+        <div class="stats-grid" id="statsGrid"></div>
+        <div class="graph-container">
+            <h2>📈 Daily Points (Last 30 Days)</h2>
+            <canvas id="activityChart" width="400" height="200"></canvas>
+        </div>
+        <div class="recent-list">
+            <h2>📋 Recent Activity (Last 30 days)</h2>
+            <div id="recentList"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const stats = {
+        accessCode: 'your-new-code',
+        chart: null,
+
+        async checkAccess() {
+            const code = document.getElementById('accessCode').value;
+            if (code === this.accessCode) {
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('statsSection').classList.remove('hidden');
+                document.getElementById('statsHeader').style.display = 'flex';
+                await this.loadStats();
+            } else {
+                document.getElementById('loginError').innerHTML = '❌ Incorrect access code';
+            }
+        },
+
+        async loadStats() {
+            try {
+                const res = await fetch('api.php?action=history');
+                const data = await res.json();
+                const history = data.history || [];
+
+                // Compute stats
+                const statsData = this.computeStats(history);
+                this.renderStats(statsData);
+                this.renderActivityGraph(history);
+                this.renderRecentActivity(history);
+            } catch(e) {
+                console.error('Failed to load stats:', e);
+                document.getElementById('statsGrid').innerHTML = '<div class="error">❌ Failed to load statistics</div>';
+            }
+        },
+
+        computeStats(history) {
+            // Total points earned (positive only)
+            const totalEarned = history.filter(h => h.points > 0).reduce((sum, h) => sum + h.points, 0);
+            // Current points (net sum)
+            const currentPoints = history.reduce((sum, h) => sum + h.points, 0);
+            // Today's points
+            const today = new Date().toDateString();
+            const todayPoints = history.filter(h => h.date === today && h.points > 0).reduce((sum, h) => sum + h.points, 0);
+            // Total rewards redeemed
+            const totalRewards = history.filter(h => h.type === 'reward_redeem').length;
+            // Latest reward
+            const latestReward = history.filter(h => h.type === 'reward_redeem').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+            // Active days (unique dates with any completion)
+            const activeDays = new Set(history.filter(h => h.type === 'quest_complete').map(h => h.date)).size;
+            // Streak (consecutive days with at least one completion)
+            const streak = this.calculateStreak(history);
+
+            return {
+                totalEarned,
+                currentPoints,
+                todayPoints,
+                totalRewards,
+                latestReward,
+                activeDays,
+                streak
+            };
+        },
+
+        calculateStreak(history) {
+            // Get unique dates with at least one quest completion
+            const completionDates = [...new Set(history.filter(h => h.type === 'quest_complete').map(h => h.date))];
+            if (completionDates.length === 0) return 0;
+            // Sort descending
+            completionDates.sort((a,b) => new Date(b) - new Date(a));
+            let streak = 1;
+            let current = new Date(completionDates[0]);
+            for (let i = 1; i < completionDates.length; i++) {
+                const prev = new Date(completionDates[i]);
+                const diffDays = (current - prev) / (1000 * 60 * 60 * 24);
+                if (diffDays === 1) {
+                    streak++;
+                    current = prev;
+                } else {
+                    break;
+                }
+            }
+            return streak;
+        },
+
+        renderStats(stats) {
+            const latestRewardText = stats.latestReward ?
+                `${stats.latestReward.description.split('Redeemed ')[1] || 'Reward'} on ${new Date(stats.latestReward.date).toDateString()}` :
+                'None yet';
+
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="stat-card"><div class="stat-value">${stats.activeDays}</div><div class="stat-label">Days Active</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.streak}</div><div class="stat-label">Current Streak</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.totalEarned}</div><div class="stat-label">Total Points Earned</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.currentPoints}</div><div class="stat-label">Current Points</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.todayPoints}</div><div class="stat-label">Points Today</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.totalRewards}</div><div class="stat-label">Rewards Redeemed</div><div class="stat-sub">${latestRewardText}</div></div>
+            `;
+        },
+
+        renderActivityGraph(history) {
+            // Group points by date (last 30 days)
+            const pointsByDate = new Map();
+            const today = new Date();
+            for (let i = 0; i < 30; i++) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+                const dateStr = date.toDateString();
+                pointsByDate.set(dateStr, 0);
+            }
+            history.forEach(h => {
+                if (h.points > 0 && pointsByDate.has(h.date)) {
+                    pointsByDate.set(h.date, pointsByDate.get(h.date) + h.points);
+                }
+            });
+            // Convert to arrays for chart (reverse so oldest first)
+            const labels = Array.from(pointsByDate.keys()).reverse();
+            const dataPoints = Array.from(pointsByDate.values()).reverse();
+
+            const ctx = document.getElementById('activityChart').getContext('2d');
+            if (this.chart) this.chart.destroy();
+            this.chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels.map(d => d.slice(0, 10)), // short date
+                    datasets: [{
+                        label: 'Points Earned',
+                        data: dataPoints,
+                        backgroundColor: 'rgba(74, 124, 89, 0.7)',
+                        borderColor: '#4a7c59',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { labels: { color: '#e6d5b8' } },
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.raw} points` } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#8a9968', maxRotation: 45, autoSkip: true, maxTicksLimit: 10 } },
+                        y: { ticks: { color: '#8a9968', stepSize: 1 }, grid: { color: '#2a2a2a' } }
+                    }
+                }
+            });
+        },
+
+        renderRecentActivity(history) {
+            const container = document.getElementById('recentList');
+            if (!history.length) {
+                container.innerHTML = '<div class="empty-state">📭 No activity yet.</div>';
+                return;
+            }
+            // Group by date (last 30 days)
+            const grouped = {};
+            history.forEach(item => {
+                const date = item.date;
+                if (!grouped[date]) grouped[date] = [];
+                grouped[date].push(item);
+            });
+            // Sort dates descending
+            const sortedDates = Object.keys(grouped).sort((a,b) => new Date(b) - new Date(a));
+            let html = '';
+            for (const date of sortedDates.slice(0, 30)) {
+                const items = grouped[date];
+                const totalPoints = items.reduce((sum, i) => sum + (i.points > 0 ? i.points : 0), 0);
+                html += `<div style="margin-bottom:1rem;"><div style="background:var(--dark-grey-3); padding:0.5rem; border-radius:6px;"><strong>${new Date(date).toDateString()}</strong> <span style="float:right;">+${totalPoints} pts</span></div>`;
+                items.forEach(item => {
+                    let icon = '';
+                    if (item.type === 'quest_complete') icon = '✅ ';
+                    else if (item.type === 'reward_redeem') icon = '🍫 ';
+                    else if (item.type === 'achievement') icon = '🏆 ';
+                    else if (item.type === 'bonus') icon = '✨ ';
+                    const pointsText = item.points > 0 ? `+${item.points}` : `${item.points}`;
+                    html += `<div class="recent-item"><div class="recent-desc">${icon}${item.description}</div><div class="recent-points">${pointsText} pts</div></div>`;
+                });
+                html += `</div>`;
+            }
+            container.innerHTML = html;
+        }
+    };
+</script>
+</body>
+</html>

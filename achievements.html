@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline';">
+    <title>Achievements - Quest Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --jade: #4a7c59;
+            --jade-dark: #2d4a37;
+            --olive: #6b7d54;
+            --olive-light: #8a9968;
+            --dark-grey: #1a1a1a;
+            --dark-grey-2: #2a2a2a;
+            --dark-grey-3: #3a3a3a;
+            --cream: #e6d5b8;
+            --accent: #d4a574;
+            --success: #52b788;
+            --gold: #ffd700;
+        }
+        html, body { width: 100%; min-height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+        .container { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 2px solid var(--jade); padding-bottom: 1rem; }
+        .header h1 { color: var(--jade); font-size: 2rem; }
+        .nav-back button { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+        .stats-summary { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 1rem; text-align: center; }
+        .stat-card { background: var(--dark-grey-3); padding: 0.75rem; border-radius: 8px; border-left: 3px solid var(--gold); }
+        .stat-card .value { font-size: 1.5rem; font-weight: 700; color: var(--gold); }
+        .stat-card .label { font-size: 0.7rem; color: var(--olive-light); text-transform: uppercase; }
+        .achievement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+        .achievement-card { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; border: 1px solid var(--dark-grey-3); transition: all 0.3s; }
+        .achievement-card.earned { border-left: 4px solid var(--gold); background: linear-gradient(135deg, var(--dark-grey-2), rgba(74,124,89,0.1)); }
+        .achievement-card.locked { opacity: 0.5; filter: blur(2px); }
+        .achievement-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .achievement-name { font-weight: 700; color: var(--cream); margin-bottom: 0.25rem; }
+        .achievement-desc { font-size: 0.75rem; color: var(--olive-light); margin-bottom: 0.5rem; }
+        .achievement-points { font-size: 0.7rem; color: var(--gold); }
+        .earned-date { font-size: 0.7rem; color: var(--success); margin-top: 0.5rem; }
+        .locked-badge { display: inline-block; background: var(--dark-grey-3); padding: 0.2rem 0.5rem; border-radius: 20px; font-size: 0.7rem; margin-top: 0.5rem; }
+        .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .category-tab { background: var(--dark-grey-3); padding: 0.5rem 1rem; border-radius: 20px; cursor: pointer; transition: all 0.3s; }
+        .category-tab.active { background: var(--jade); color: var(--dark-grey); }
+        @media (max-width: 600px) { .achievement-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Quests</button></div>
+    <div class="header"><h1>🏆 Achievements</h1><button onclick="location.reload()">🔄</button></div>
+
+    <div class="stats-summary" id="statsSummary">Loading...</div>
+
+    <div class="category-tabs" id="categoryTabs"></div>
+    <div class="achievement-grid" id="achievementGrid"></div>
+</div>
+
+<script>
+    const achievements = {
+        allAchievements: [],
+        earnedIds: [],
+        currentCategory: 'all',
+
+        async init() {
+            await this.loadData();
+            this.renderStats();
+            this.renderCategories();
+            this.renderAchievements();
+        },
+
+        async loadData() {
+            try {
+                const res = await fetch('api.php?action=achievements');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.allAchievements = data.all || [];
+                    this.earnedIds = data.earned || [];
+                }
+            } catch(e) { console.error('Failed to load achievements:', e); }
+        },
+
+        renderStats() {
+            const earned = this.earnedIds.length;
+            const total = this.allAchievements.length;
+            const totalPoints = this.allAchievements.filter(a => this.earnedIds.includes(a.id)).reduce((sum, a) => sum + (a.points_reward || 0), 0);
+            document.getElementById('statsSummary').innerHTML = `
+                <div class="stat-card"><div class="value">${earned}/${total}</div><div class="label">Achievements</div></div>
+                <div class="stat-card"><div class="value">${totalPoints}</div><div class="label">Bonus Points</div></div>
+                <div class="stat-card"><div class="value">${Math.round((earned/total)*100)}%</div><div class="label">Completion</div></div>
+            `;
+        },
+
+        renderCategories() {
+            const categories = ['all', 'quest', 'streak', 'hydration', 'timing'];
+            const container = document.getElementById('categoryTabs');
+            container.innerHTML = categories.map(cat => `
+                <div class="category-tab ${this.currentCategory === cat ? 'active' : ''}" data-category="${cat}">${cat.charAt(0).toUpperCase() + cat.slice(1)}</div>
+            `).join('');
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    this.currentCategory = tab.dataset.category;
+                    this.renderCategories();
+                    this.renderAchievements();
+                });
+            });
+        },
+
+        getCategory(achievement) {
+            const type = achievement.requirement_type;
+            if (type === 'quest_count') return 'quest';
+            if (type === 'streak') return 'streak';
+            if (type === 'lemonade_days') return 'hydration';
+            if (type === 'morning_quests' || type === 'night_quests') return 'timing';
+            return 'other';
+        },
+
+        renderAchievements() {
+            let filtered = this.allAchievements;
+            if (this.currentCategory !== 'all') {
+                filtered = filtered.filter(a => this.getCategory(a) === this.currentCategory);
+            }
+
+            // Split into earned and locked
+            const earned = filtered.filter(a => this.earnedIds.includes(a.id));
+            const locked = filtered.filter(a => !this.earnedIds.includes(a.id));
+
+            // Sort earned by most recent first (by id desc) and locked by requirement value
+            earned.sort((a, b) => b.id - a.id);
+            locked.sort((a, b) => a.requirement_value - b.requirement_value);
+
+            const allDisplay = [...earned, ...locked];
+
+            const container = document.getElementById('achievementGrid');
+            container.innerHTML = allDisplay.map(ach => {
+                const isEarned = this.earnedIds.includes(ach.id);
+                return `
+                    <div class="achievement-card ${isEarned ? 'earned' : 'locked'}">
+                        <div class="achievement-icon">${isEarned ? (ach.icon || '🏆') : '❓'}</div>
+                        <div class="achievement-name">${isEarned ? ach.name : '???'}</div>
+                        <div class="achievement-desc">${isEarned ? ach.description : 'Secret Achievement'}</div>
+                        <div class="achievement-points">${isEarned ? `+${ach.points_reward} pts` : '???'}</div>
+                        ${isEarned ? `<div class="earned-date">Earned! 🎉</div>` : `<div class="locked-badge">🔒 Locked</div>`}
+                    </div>
+                `;
+            }).join('');
+        }
+    };
+
+    achievements.init();
+</script>
+</body>
+</html>

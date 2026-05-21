@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Quest Tracker">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline';">
+    <title>Quest Tracker</title>
+    <link rel="manifest" href="manifest.json?v=2">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --jade: #4a7c59;
+            --jade-dark: #2d4a37;
+            --olive: #6b7d54;
+            --olive-light: #8a9968;
+            --dark-grey: #1a1a1a;
+            --dark-grey-2: #2a2a2a;
+            --dark-grey-3: #3a3a3a;
+            --cream: #e6d5b8;
+            --accent: #d4a574;
+            --success: #52b788;
+            --warning: #e8971f;
+            --error: #d62828;
+        }
+        html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); overflow-x: hidden; }
+        body { padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(5px, env(safe-area-inset-bottom)); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        .notch-fix { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
+        .notch-fix-bottom { position: fixed; bottom: 0; left: 0; right: 0; height: env(safe-area-inset-bottom); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
+        .auth-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .auth-modal.hidden { display: none; }
+        .auth-box { background: var(--dark-grey-2); border: 2px solid var(--jade); border-radius: 12px; padding: 2rem; width: 90%; max-width: 400px; text-align: center; }
+        .auth-box h1 { color: var(--jade); margin-bottom: 0.5rem; font-size: 1.75rem; }
+        .auth-box p { color: var(--olive-light); margin-bottom: 1.5rem; font-size: 0.95rem; }
+        .auth-buttons { display: flex; flex-direction: column; gap: 1rem; }
+        button { padding: 0.75rem 1.5rem; background: var(--jade); color: var(--dark-grey); border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.95rem; transition: all 0.3s; }
+        button:hover { background: var(--olive-light); transform: translateY(-2px); }
+        button.secondary { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; }
+        .container { max-width: 800px; margin: 0 auto; padding: 1rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--dark-grey-2); border-bottom: 2px solid var(--jade); margin-bottom: 1.5rem; border-radius: 0 0 8px 8px; gap: 1rem; flex-wrap: wrap; }
+        .player-info { display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 200px; }
+        .player-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--jade); display: flex; align-items: center; justify-content: center; font-size: 24px; border: 2px solid var(--jade-dark); overflow: hidden; flex-shrink: 0; }
+        .player-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+        .player-details h1 { font-size: 1.5rem; font-weight: 600; color: var(--jade); margin: 0; }
+        .points-display { font-size: 0.875rem; color: var(--olive-light); }
+        .header-actions { display: flex; gap: 0.75rem; align-items: center; }
+        .header-actions button { padding: 0.4rem 0.8rem; font-size: 0.85rem; line-height: 1; height: 44px; min-width: 44px; }
+        .reload-btn { background: var(--accent); color: var(--dark-grey); }
+        .missed-section { background: rgba(232,151,31,0.1); border-left: 4px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; border: 1px solid var(--warning); }
+        .missed-section h3 { color: var(--warning); margin: 0 0 0.75rem 0; }
+        .missed-quest { background: var(--dark-grey-3); padding: 0.75rem; border-radius: 4px; margin-bottom: 0.5rem; opacity: 0.7; border-left: 4px solid var(--warning); }
+        .quest-section { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; margin-bottom: 1.5rem; }
+        .quest-section-header { background: var(--jade-dark); padding: 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .quest-section-header h2 { margin: 0; font-size: 1.125rem; color: var(--cream); }
+        .section-toggle { transition: transform 0.3s; font-size: 0.8rem; line-height: 1; }
+        .section-toggle.collapsed { transform: rotate(-90deg); }
+        .quest-list { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+        .quest-list.hidden { display: none; }
+        .quest-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--dark-grey-3); border-radius: 6px; border-left: 4px solid var(--olive); }
+        .quest-item.completed { background: rgba(82,183,136,0.1); border-left-color: var(--success); opacity: 0.6; }
+        .quest-item.locked { opacity: 0.5; pointer-events: none; }
+        .quest-checkbox { width: 24px; height: 24px; cursor: pointer; accent-color: var(--jade); flex-shrink: 0; }
+        .quest-info { flex: 1; }
+        .quest-name { font-weight: 500; color: var(--cream); margin: 0 0 0.25rem 0; }
+        .quest-item.completed .quest-name { text-decoration: line-through; color: var(--olive-light); }
+        .quest-details { font-size: 0.75rem; color: var(--olive-light); margin: 0; }
+        .quest-points { background: var(--jade); color: var(--dark-grey); padding: 0.25rem 0.75rem; border-radius: 12px; font-weight: 600; font-size: 0.875rem; white-space: nowrap; flex-shrink: 0; }
+        .lock-message { background: rgba(232,151,31,0.15); border: 1px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; text-align: center; color: var(--warning); }
+        .sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .sidebar-card { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1rem; }
+        .sidebar-card.shop { padding: 0; }
+        .sidebar-card h2 { margin: 0; font-size: 1.125rem; color: var(--jade); }
+        .point-stat { font-size: 2rem; font-weight: 700; color: var(--accent); margin: 0.5rem 0; text-align: center; }
+        .today-points-sup { font-size: 0.9rem; font-weight: 600; color: var(--success); vertical-align: super; margin-left: 2px; }
+        .shop-header { padding: 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .shop-header h2 { margin: 0; font-size: 1.125rem; }
+        .shop-items { margin: 1rem; display: flex; flex-direction: column; gap: 0.75rem; max-height: 300px; overflow-y: auto; }
+        .shop-items.hidden { display: none; }
+        .shop-item { background: var(--dark-grey-3); padding: 0.75rem; border-radius: 6px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
+        .shop-item-name { font-weight: 600; margin: 0; color: var(--cream); }
+        .shop-item-cost { font-size: 0.75rem; color: var(--olive-light); margin: 0.25rem 0 0 0; }
+        .redeem-btn { background: var(--accent); color: var(--dark-grey); padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.75rem; }
+        .redeem-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .completed-section { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; margin-top: 2rem; }
+        .completed-section-header { background: rgba(82,183,136,0.2); padding: 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .completed-section-header h2 { margin: 0; font-size: 1rem; color: var(--success); }
+        .completed-list { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .completed-list.hidden { display: none; }
+        .completed-item { background: var(--dark-grey-3); padding: 0.5rem 0.75rem; border-radius: 4px; display: flex; gap: 0.75rem; opacity: 0.6; }
+        .completed-item-name { flex: 1; color: var(--olive-light); text-decoration: line-through; font-size: 0.9rem; }
+        .completed-item-points { font-size: 0.75rem; color: var(--success); font-weight: 600; }
+        @media (max-width: 768px) { .sidebar { grid-template-columns: 1fr; } .header { flex-direction: column; text-align: center; } .player-info { width: 100%; justify-content: space-between; } .logout-btn-mobile { display: inline-block; } .header-actions { justify-content: center; flex-wrap: wrap; } }
+        @media (min-width: 769px) { .logout-btn-mobile { display: none; } }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; }
+        /* Mobile logout button (inside player-info) */
+        .logout-btn-mobile {
+            background: var(--dark-grey-3);
+            color: var(--cream);
+            border: 1px solid var(--olive);
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            font-size: 1.1rem;    /* same size as the emoji buttons */
+            min-width: 44px;
+            height: 44px;
+            margin-left: auto;
+        }
+
+        /* Desktop logout button (inside header-actions) */
+        .logout-btn-desktop {
+            background: var(--dark-grey-3);
+            color: var(--cream);
+            border: 1px solid var(--olive);
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            line-height: 1;
+            height: auto;
+            min-width: 44px;
+        }
+        .logout-btn-desktop:hover {
+            background: var(--olive-light);
+            transform: translateY(-2px);
+        }
+        @media (max-width: 768px) { .logout-btn-desktop { display: none; } .logout-btn-mobile { display: inline-block; } }
+        @media (min-width: 769px) { .logout-btn-mobile { display: none; } .logout-btn-desktop { display: inline-block; } }
+    </style>
+</head>
+<body>
+<div class="notch-fix"></div>
+<h1 class="sr-only">Quest Tracker - ADHD Friendly To-Do with Rewards</h1>
+
+<div id="authModal" class="auth-modal">
+    <div class="auth-box">
+        <h1>🎮 Quest Tracker</h1>
+        <p id="authSubtitle">Player 1</p>
+        <div class="auth-buttons" id="authButtons"></div>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--dark-grey-3);">
+            <button onclick="window.location.href='stats.html'" class="secondary" style="width: 100%;">📊 View Stats</button>
+        </div>
+    </div>
+</div>
+
+<div id="appContainer" style="display: none;">
+    <div class="header">
+        <div class="player-info">
+            <div class="player-avatar" id="playerAvatar">🎮</div>
+            <div class="player-details">
+                <h1 style="font-family: monospace;">[ <span style="color: var(--accent);">Player 1</span> ]</h1>
+                <div class="points-display"><span id="totalPoints">0</span> pts earned today</div>
+            </div>
+            <button class="logout-btn-mobile" onclick="app.logout()">Logout</button>
+        </div>
+        <div class="header-actions">
+            <button onclick="window.location.reload()" class="reload-btn" title="Reload">🔄</button>
+            <button onclick="app.undoLastToggle()" title="Undo last action">↩️</button>
+            <button onclick="app.enableNotifications()" title="Enable Notifications">🔔</button>
+            <button onclick="app.openHistory()" title="History">📜</button>
+            <button onclick="app.openAchievements()" title="Achievements">🏆</button>
+            <button onclick="app.openManager()">⚙️</button>
+            <button class="logout-btn-desktop" onclick="app.logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-card">
+                <h2>⭐ Points Balance</h2>
+                <div class="point-stat"><span id="displayTotalPoints">0</span><sup id="displayTodayPoints" class="today-points-sup"></sup></div>
+            </div>
+            <div class="sidebar-card shop">
+                <div class="shop-header" onclick="app.toggleShop()">
+                    <h2>🏪 Shop</h2>
+                    <span class="section-toggle collapsed" id="shopToggle">▼</span>
+                </div>
+                <div class="shop-items hidden" id="shopItems"></div>
+            </div>
+        </div>
+
+        <div id="missedSection"></div>
+        <div id="calendarQuestsSection" style="display:none; margin-bottom:1.5rem;">
+            <div class="quest-section">
+                <div class="quest-section-header" id="calendarSectionHeader" style="background: var(--jade-dark); cursor: pointer;">
+                    <h2>📅 Today's Calendar Events</h2>
+                    <div class="section-toggle collapsed" id="calendarToggle">▼</div>
+                </div>
+                <div class="quest-list hidden" id="calendarQuestsList"></div>
+            </div>
+        </div>
+        <div id="questsContainer"></div>
+        <div id="completedSection"></div>
+    </div>
+</div>
+
+<script>
+    // Force clear old cache on PWA
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+                registration.unregister();
+                console.log('ServiceWorker unregistered');
+            }
+        });
+    }
+    if (localStorage.getItem('app_version') !== '3.0') {
+        localStorage.clear();
+        localStorage.setItem('app_version', '3.0');
+        location.reload(true);
+    }
+</script>
+
+<script>
+    // ============================================
+    // WEBAUTHN HELPER - INLINED
+    // ============================================
+    const WebAuthnHelper = (() => {
+        const STORE_KEY = 'webauthn_credential';
+        const bufToBase64url = (buf) => {
+            return btoa(String.fromCharCode(...new Uint8Array(buf)))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        };
+        const isSupported = () => {
+            return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create && navigator.credentials.get);
+        };
+        const register = async (username = 'Player 1') => {
+            if (!isSupported()) return { success: false, error: 'WebAuthn not supported.' };
+            const userId = crypto.getRandomValues(new Uint8Array(16));
+            const challenge = crypto.getRandomValues(new Uint8Array(32));
+            const publicKeyOptions = {
+                challenge, rp: { name: 'Quest Tracker', id: window.location.hostname },
+                user: { id: userId, name: username, displayName: username },
+                pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+                authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+                timeout: 60000, attestation: 'none'
+            };
+            try {
+                const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+                const credentialId = bufToBase64url(credential.rawId);
+                const userIdB64 = bufToBase64url(userId);
+                localStorage.setItem(STORE_KEY, JSON.stringify({ credentialId, userId: userIdB64, registeredAt: new Date().toISOString() }));
+                return { success: true, credentialId, userId: userIdB64 };
+            } catch (err) { return { success: false, error: err.message }; }
+        };
+        const authenticate = async () => {
+            if (!isSupported()) return { success: false, error: 'WebAuthn not supported.' };
+            const challenge = crypto.getRandomValues(new Uint8Array(32));
+            try {
+                await navigator.credentials.get({ publicKey: { challenge, rpId: window.location.hostname, userVerification: 'required', timeout: 60000 } });
+                return { success: true };
+            } catch (err) { return { success: false, error: err.message }; }
+        };
+        const authenticateQR = async () => {
+            if (!isSupported()) return { success: false, error: 'WebAuthn not supported.' };
+            const challenge = crypto.getRandomValues(new Uint8Array(32));
+            try {
+                await navigator.credentials.get({ publicKey: { challenge, rpId: window.location.hostname, userVerification: 'required', mediation: 'conditional', timeout: 120000 } });
+                return { success: true };
+            } catch (err) { return { success: false, error: err.message }; }
+        };
+        const reset = () => localStorage.removeItem(STORE_KEY);
+        return { isSupported, register, authenticate, authenticateQR, reset };
+    })();
+
+    // ============================================
+    // MAIN APP
+    // ============================================
+    const app = {
+        userData: null,
+        settings: null,
+        quests: [],
+        shopItems: [],
+        calendarFeeds: [],
+        history: [],
+        isLoggedIn: false,
+        sideQuestUnlocked: false,
+        reminderInterval: null,
+        lastToggledQuest: null,
+        lastToggledState: null,
+        totalPoints: 0,
+        todayPoints: 0,
+
+        hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return Math.abs(hash).toString(36);
+        },
+
+        async init() {
+            await this.loadData();
+            await this.checkPasskeyRegistration();
+            this.startReminderChecker();
+        },
+
+        async saveData() {
+            if (!this.userData) return;
+
+            // Create a clean copy without circular references
+            const dataToSave = {
+                user: this.userData,
+                quests: this.quests,
+                history: this.history,
+                passkeyRegistered: this.passkeyRegistered
+            };
+
+            localStorage.setItem('questTrackerData', JSON.stringify(dataToSave));
+
+            try {
+                await fetch('api.php', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToSave)
+                });
+            } catch(e) {
+                console.warn('Could not save to server:', e);
+            }
+        },
+
+        addToHistory(type, description, points) {
+            const today = new Date().toDateString();
+            const playerName = this.userData?.name || 'Player 1';
+
+            // Format description consistently
+            let formattedDescription = description;
+            if (type === 'reward_redeem' && !description.startsWith(playerName)) {
+                formattedDescription = `${playerName} ${description}`;
+            } else if (type === 'quest_complete' && !description.includes('Completed quest:')) {
+                formattedDescription = `Completed quest: ${description}`;
+            } else if (type === 'bonus') {
+                formattedDescription = description;
+            }
+
+            const entry = {
+                type: type,
+                description: formattedDescription,
+                points: points,  // Store as integer (positive or negative)
+                date: today,
+                timestamp: new Date().toISOString()
+            };
+
+            this.history.push(entry);
+
+            // Save to server via the history endpoint
+            fetch('api.php?action=history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: [entry] })
+            }).catch(e => console.warn('Could not save to server:', e));
+
+            // Keep only last 30 days locally
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            this.history = this.history.filter(h => new Date(h.timestamp) > thirtyDaysAgo);
+            this.saveData();
+        },
+
+        checkDailyReset() {
+            const today = new Date().toDateString();
+            if (this.userData.lastReset !== today) {
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayDate = yesterday.toDateString();
+
+                // 1. Remove expired calendar quests (expires < today)
+                this.quests = this.quests.filter(quest => {
+                    if (quest.type === 'calendar' && new Date(quest.expires) < new Date(today)) {
+                        console.log(`🗑️ Removing expired calendar quest: ${quest.name}`);
+                        return false;
+                    }
+                    return true;
+                });
+
+                // 2. Process remaining quests: mark missed, delete completed one-time
+                const keepQuests = [];
+                this.quests.forEach(quest => {
+                    if (quest.type !== 'calendar') {
+                        const isOneTime = quest.schedule === 'One-time';
+                        if (isOneTime && quest.completed) {
+                            console.log(`🗑️ Removing completed one-time quest: ${quest.name}`);
+                            return;
+                        }
+                        if (!quest.completed && quest.schedule !== 'One-time' && !quest.specific_dates && !this.matchesDatePattern(quest.schedule, yesterday)) {
+                            if (!quest.missed) {
+                                quest.missed = true;
+                                quest.missedDate = yesterdayDate;
+                            }
+                        }
+                    }
+                    keepQuests.push(quest);
+                });
+
+                this.quests = keepQuests;
+                this.userData.lastReset = today;
+                this.saveData();
+                this.addBonusPointsForMissed();
+                this.syncCalendarFeeds();
+                this.loadCompletions();
+            }
+        },
+
+        startReminderChecker() {
+            if (this.reminderInterval) clearInterval(this.reminderInterval);
+            this.reminderInterval = setInterval(() => this.checkReminders(), 30000);
+        },
+
+        checkNotificationSupport() {
+            if (!('Notification' in window)) {
+                console.log('This browser does not support notifications');
+                return false;
+            }
+            return true;
+        },
+
+        requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                console.log('🔔 Notifications available. Click the bell to enable.');
+            }
+        },
+
+        async enableNotifications() {
+            if (!this.checkNotificationSupport()) {
+                alert('❌ Notifications not supported on this browser');
+                return;
+            }
+            if (Notification.permission === 'granted') {
+                alert('✅ Notifications already enabled!');
+                this.sendTestNotification();
+                return;
+            }
+            if (Notification.permission === 'denied') {
+                alert('❌ Notifications blocked. Please check your browser settings.');
+                return;
+            }
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                alert('✅ Notifications enabled!');
+                this.sendTestNotification();
+                localStorage.setItem('notifications_enabled', 'true');
+            } else {
+                alert('❌ Notification permission denied');
+            }
+        },
+
+        sendTestNotification() {
+            if (Notification.permission === 'granted') {
+                new Notification('🎮 Quest Tracker', {
+                    body: 'Notifications are working! You will receive quest reminders and achievements.',
+                    icon: '/favicon.ico',
+                    tag: 'test-notification'
+                });
+            }
+        },
+
+        async checkReminders() {
+            if (Notification.permission !== 'granted') return;
+            try {
+                const res = await fetch('api.php?action=pending_reminders');
+                const data = await res.json();
+                if (data.reminders && data.reminders.length) {
+                    data.reminders.forEach(reminder => {
+                        new Notification(`⏰ Reminder: ${reminder.name}`, {
+                            body: `Time to complete! (+${reminder.points} points)`,
+                            icon: '/favicon.ico',
+                            tag: reminder.id
+                        });
+                    });
+                }
+            } catch(e) { console.warn('Reminder check failed:', e); }
+        },
+
+        formatTime12hr(date) {
+            let hours = date.getHours();
+            const minutes = date.getMinutes();
+            const ampm = hours >= 12 ? 'pm' : 'am';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            const minutesStr = minutes.toString().padStart(2, '0');
+            return `${hours}:${minutesStr} ${ampm}`;
+        },
+
+        saveLastToggle(questId, wasCompleted, pointsDelta) {
+            this.lastToggledQuest = questId;
+            this.lastToggledState = { completed: wasCompleted, pointsDelta: pointsDelta };
+            setTimeout(() => {
+                if (this.lastToggledQuest === questId) {
+                    this.lastToggledQuest = null;
+                    this.lastToggledState = null;
+                }
+            }, 30 * 60 * 1000);
+        },
+
+        async undoLastToggle() {
+            if (!this.lastToggledQuest || !this.lastToggledState) {
+                alert('❌ Nothing to undo (last action was more than 30 minutes ago)');
+                return;
+            }
+            const quest = this.quests.find(q => q.id === this.lastToggledQuest);
+            if (!quest) {
+                alert('❌ Quest not found');
+                return;
+            }
+            await fetch('api.php?action=toggle_quest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    quest_id: quest.id,
+                    quest_name: quest.name,
+                    points: quest.points || 1,
+                    completed: this.lastToggledState.completed
+                })
+            });
+            await this.loadData();
+            this.render();
+            this.lastToggledQuest = null;
+            this.lastToggledState = null;
+            alert(`↩️ Undid: ${quest.name}`);
+        },
+
+        async loadData() {
+            try {
+                const res = await fetch('api.php');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.userData = data.user;
+                    this.settings = data.settings;
+
+                    // Parse quests and convert JSON strings to arrays
+                    this.quests = (data.quests || []).map(q => {
+                        // Parse days_visible if it's a JSON string
+                        if (q.days_visible && typeof q.days_visible === 'string') {
+                            try {
+                                // Try to parse as JSON first (for ["Monday", "Wednesday"])
+                                q.days_visible = JSON.parse(q.days_visible);
+                            } catch(e) {
+                                // If it fails, treat it as a single day string and convert to array
+                                if (q.days_visible && q.days_visible !== 'null') {
+                                    q.days_visible = [q.days_visible];
+                                } else {
+                                    q.days_visible = null;
+                                }
+                            }
+                        }
+                        // Parse specific_dates if it's a JSON string
+                        if (q.specific_dates && typeof q.specific_dates === 'string') {
+                            try {
+                                q.specific_dates = JSON.parse(q.specific_dates);
+                            } catch(e) { q.specific_dates = null; }
+                        }
+                        // After parsing days_visible and specific_dates, add:
+                        if (!q.days_visible && q.schedule && !q.schedule.includes('/') && !q.schedule.includes('every other') && !q.schedule.includes('&')) {
+                            const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                            const scheduleDay = q.schedule.charAt(0).toUpperCase() + q.schedule.slice(1).toLowerCase();
+                            if (dayNames.includes(scheduleDay)) {
+                                q.days_visible = [scheduleDay];
+                                q.schedule = 'Daily';   // keep schedule as Daily to avoid double‑matching
+                            }
+                        }
+                        return q;
+                    });
+
+                    this.shopItems = data.shopItems || [];
+                    this.calendarFeeds = data.calendarFeeds || [];
+
+                    // Load points
+                    await this.loadPoints();
+
+                    // Load completions to set quest completed states
+                    await this.loadCompletions();
+
+                    return;
+                }
+            } catch (e) { console.warn(e); }
+        },
+
+        async loadPoints() {
+            try {
+                const res = await fetch('api.php?action=points');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.totalPoints = data.totalPoints || 0;
+                    this.todayPoints = data.todayPoints || 0;
+                }
+            } catch(e) { console.warn('Could not load points:', e); }
+        },
+
+        async loadCompletions() {
+            try {
+                const res = await fetch('api.php?action=completions');
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('Completions loaded:', data.completions); // Debug
+                    const completions = data.completions || {};
+                    this.quests.forEach(quest => {
+                        quest.completed = completions[quest.id] ? completions[quest.id].completed : false;
+                    });
+                    this.render(); // Force UI update
+                } else {
+                    console.error('Completions fetch failed:', res.status);
+                }
+            } catch(e) {
+                console.error('Could not load completions:', e);
+            }
+        },
+
+        async checkPasskeyRegistration() {
+            const savedLoggedIn = localStorage.getItem('quest_logged_in') === 'true';
+            const savedUserId = localStorage.getItem('quest_user_id');
+            if (savedLoggedIn && savedUserId && this.userData && this.userData.id === savedUserId) {
+                this.isLoggedIn = true;
+                this.showApp();
+                return;
+            }
+            if (!WebAuthnHelper.isSupported()) {
+                document.getElementById('authSubtitle').textContent = 'Browser not supported';
+                document.getElementById('authButtons').innerHTML = '<p style="color:var(--error);">No WebAuthn support</p>';
+                document.getElementById('authModal').classList.remove('hidden');
+                return;
+            }
+            let serverRegistered = false;
+            try { const res = await fetch('api.php?action=passkey_status'); if (res.ok) serverRegistered = (await res.json()).registered === true; } catch(e) {}
+            if (!serverRegistered) this.showRegistration();
+            else this.showLogin();
+        },
+
+        showLogin() {
+            document.getElementById('authSubtitle').textContent = 'Login';
+            document.getElementById('authButtons').innerHTML = `<button onclick="app.passkeyLogin()">🔐 Log in with Passkey</button><button onclick="app.passkeyLoginQR()" class="secondary">📱 Use QR code</button>`;
+            document.getElementById('authModal').classList.remove('hidden');
+        },
+
+        showRegistration() {
+            document.getElementById('authSubtitle').textContent = 'Register';
+            document.getElementById('authButtons').innerHTML = `<button onclick="app.passkeyRegister()">🔐 Register with Passkey</button>`;
+            document.getElementById('authModal').classList.remove('hidden');
+        },
+
+        showApp() {
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('appContainer').style.display = 'block';
+            this.checkDailyReset();
+            this.loadAvatar();
+            this.render();
+            this.setSessionCookie();
+            localStorage.setItem('quest_logged_in', 'true');
+            if (this.userData) localStorage.setItem('quest_user_id', this.userData.id);
+            this.requestNotificationPermission();
+            this.syncCalendarFeeds();
+        },
+
+        async passkeyRegister() {
+            const secret = prompt('Enter the registration secret:');
+            if (!secret) return;
+            document.getElementById('authButtons').innerHTML = '<p style="color:var(--olive-light);">Creating passkey...</p>';
+            const result = await WebAuthnHelper.register('Player 1');
+            if (!result.success) { this.showRegistration(); alert('Failed: ' + result.error); return; }
+            try {
+                const res = await fetch('api.php?action=save_credential', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Register-Secret': secret }, body: JSON.stringify({ credentialId: result.credentialId }) });
+                if (!res.ok) throw new Error();
+            } catch(e) { alert('Server error'); WebAuthnHelper.reset(); this.showRegistration(); return; }
+            this.userData = { id: result.userId, name: 'Player 1' };
+            await this.loadData();
+            this.showApp();
+        },
+
+        async passkeyLogin() {
+            document.getElementById('authButtons').innerHTML = '<p style="color:var(--olive-light);">Waiting for passkey...</p>';
+            const result = await WebAuthnHelper.authenticate();
+            if (!result.success) { this.showLogin(); alert('Login failed: ' + result.error); return; }
+            this.isLoggedIn = true;
+            this.showApp();
+        },
+
+        async passkeyLoginQR() {
+            document.getElementById('authButtons').innerHTML = '<p style="color:var(--olive-light);">Waiting for QR passkey...</p>';
+            const result = await WebAuthnHelper.authenticateQR();
+            if (!result.success) { this.showLogin(); alert('Login failed: ' + result.error); return; }
+            this.isLoggedIn = true;
+            this.showApp();
+        },
+
+        logout() {
+            if (confirm('Logout?')) {
+                this.isLoggedIn = false;
+                document.cookie = 'quest_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                document.cookie = 'quest_logged_in=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                localStorage.removeItem('quest_logged_in');
+                localStorage.removeItem('quest_user_id');
+                document.getElementById('appContainer').style.display = 'none';
+                this.showLogin();
+            }
+        },
+
+        setSessionCookie() {
+            if (!this.userData?.id) return;
+            const expires = new Date();
+            expires.setDate(expires.getDate() + 7);
+            document.cookie = `quest_session=${this.userData.id}; expires=${expires.toUTCString()}; path=/; SameSite=Lax; Secure`;
+            document.cookie = `quest_logged_in=true; expires=${expires.toUTCString()}; path=/; SameSite=Lax; Secure`;
+        },
+
+        // ============ SCHEDULING FUNCTIONS ============
+
+        matchesDatePattern(pattern, date) {
+            if (!pattern || pattern === '&&/&&/&&&&') return true;
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const patternParts = pattern.split('/');
+            if (patternParts.length !== 3) return false;
+            if (patternParts[0] !== '&&' && patternParts[0] !== day) return false;
+            if (patternParts[1] !== '&&' && patternParts[1] !== month) return false;
+            if (patternParts[2] !== '&&&&' && patternParts[2] !== year.toString()) return false;
+            return true;
+        },
+
+        isSpecificDateMatch(quest, customDate = null) {
+            if (quest.specific_dates && quest.specific_dates.length > 0) {
+                const today = customDate || new Date();
+                for (const datePattern of quest.specific_dates) {
+                    if (this.matchesDatePattern(datePattern, today)) return true;
+                }
+            }
+            return false;
+        },
+
+        isBiWeeklyMatch(quest, customDate = null) {
+            if (!quest.schedule || !quest.schedule.toLowerCase().includes('every other')) return false;
+            const today = customDate || new Date();
+            const startOfYear = new Date(today.getFullYear(), 0, 1);
+            const pastDaysOfYear = (today - startOfYear) / 86400000;
+            const weekNumber = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+            const scheduleLower = quest.schedule.toLowerCase();
+            if (scheduleLower.includes('even') && weekNumber % 2 === 0) return true;
+            if (scheduleLower.includes('odd') && weekNumber % 2 === 1) return true;
+            return false;
+        },
+
+        getTargetWeekdayFromSchedule(schedule) {
+            const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            for (const day of weekdays) {
+                if (schedule.toLowerCase().includes(day.toLowerCase())) {
+                    return day;
+                }
+            }
+            return null;
+        },
+
+        isNthWeekdayMatch(quest, customDate = null) {
+            if (!quest.schedule) return false;
+
+            const targetDay = this.getTargetWeekdayFromSchedule(quest.schedule);
+            if (!targetDay) return false;
+
+            const today = customDate || new Date();
+            const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
+
+            // If today is not the target weekday, it can't match
+            if (todayName !== targetDay) return false;
+
+            const date = today.getDate();
+            const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const firstDayOfWeek = firstOfMonth.getDay(); // 0 = Sunday
+            const targetDayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(targetDay);
+            let occurrence = Math.ceil((date + (firstDayOfWeek - targetDayIndex)) / 7);
+            if (occurrence < 1) occurrence = 1;
+            if (occurrence > 5) occurrence = 5;
+
+            const scheduleLower = quest.schedule.toLowerCase();
+            if (scheduleLower.includes('2nd') && scheduleLower.includes('4th') && (occurrence === 2 || occurrence === 4)) return true;
+            if (scheduleLower.includes('1st') && scheduleLower.includes('3rd') && (occurrence === 1 || occurrence === 3)) return true;
+            if (scheduleLower.includes('1st') && occurrence === 1) return true;
+            if (scheduleLower.includes('2nd') && occurrence === 2) return true;
+            if (scheduleLower.includes('3rd') && occurrence === 3) return true;
+            if (scheduleLower.includes('4th') && occurrence === 4) return true;
+            if (scheduleLower.includes('5th') && occurrence === 5) return true;
+
+            return false;
+        },
+
+        isQuestVisibleToday(quest) {
+            // Calendar quests
+            if (quest.type === 'calendar') {
+                const today = new Date().toDateString();
+                return quest.expires === today;
+            }
+
+            // Specific dates
+            if (this.isSpecificDateMatch(quest)) return true;
+
+            // Single date pattern in schedule
+            if (quest.schedule && quest.schedule.includes('/')) {
+                const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
+                if (looksLikeDate) {
+                    return this.matchesDatePattern(quest.schedule, new Date());
+                }
+            }
+
+            // Bi-weekly
+            if (this.isBiWeeklyMatch(quest)) return true;
+
+            // Nth weekday (like "2nd & 4th Saturday")
+            if (this.isNthWeekdayMatch(quest)) return true;
+
+            // "Every weekend"
+            if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
+                const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+                return (today === 'Saturday' || today === 'Sunday');
+            }
+
+            // Days visible (array of weekdays)
+            if (quest.days_visible !== null && quest.days_visible !== undefined) {
+                let daysVisible = quest.days_visible;
+                if (typeof daysVisible === 'string') {
+                    try { daysVisible = JSON.parse(daysVisible); } catch(e) { daysVisible = []; }
+                }
+                if (Array.isArray(daysVisible) && daysVisible.length > 0) {
+                    const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+                    return daysVisible.includes(today);
+                }
+            }
+
+            // If schedule is a plain weekday name (e.g., "Monday") that wasn't caught earlier, treat it as a day
+            if (quest.schedule) {
+                const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
+                if (dayNames.includes(scheduleDay)) {
+                    const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+                    return scheduleDay === today;
+                }
+            }
+
+            // Default: show every day only if no special schedule is set
+            // But if the schedule is a complex pattern that didn't match, return false
+            if (quest.schedule && (quest.schedule.includes('&') || quest.schedule.includes('every') || quest.schedule.includes('2nd') || quest.schedule.includes('1st'))) {
+                return false;
+            }
+
+            return true;
+        },
+
+        wasVisibleYesterday(quest) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (this.isSpecificDateMatch(quest, yesterday)) return true;
+            if (quest.schedule && quest.schedule.includes('/')) {
+                const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
+                if (looksLikeDate) {
+                    return this.matchesDatePattern(quest.schedule, yesterday);
+                }
+            }
+            if (this.isBiWeeklyMatch(quest, yesterday)) return true;
+            if (this.isNthWeekdayMatch(quest, yesterday)) return true;
+            if (quest.days_visible !== null && quest.days_visible !== undefined) {
+                let daysVisible = quest.days_visible;
+                if (typeof daysVisible === 'string') {
+                    try { daysVisible = JSON.parse(daysVisible); } catch(e) { daysVisible = []; }
+                }
+                if (Array.isArray(daysVisible) && daysVisible.length > 0) {
+                    const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
+                    return daysVisible.includes(yesterdayName);
+                }
+            }
+            return true;
+        },
+
+        async syncCalendarFeeds() {
+            const calendarFeeds = this.calendarFeeds || [];
+            if (calendarFeeds.length === 0) return;
+
+            // ✅ Use existing calendar quests from current state (they already have correct 'completed' from loadCompletions)
+            const existingCalendarQuests = this.quests.filter(q => q.type === 'calendar');
+            const existingMap = new Map();
+            existingCalendarQuests.forEach(q => {
+                existingMap.set(q.id, q);
+            });
+
+            // Completion map by name+expires (for new events that don't yet have an ID)
+            const completionMap = new Map();
+            existingCalendarQuests.forEach(q => {
+                const key = `${q.name}_${q.expires}`;
+                completionMap.set(key, q.completed);
+            });
+
+            const updatedEvents = [];
+            for (const feed of calendarFeeds) {
+                try {
+                    const events = await this.fetchCalendarEvents(feed.url);
+                    for (const event of events) {
+                        const startDateStr = event.start.toDateString();
+                        const endDateStr = (event.end || event.start).toDateString();
+                        const questName = `📅 ${event.summary || 'Calendar Event'}`;
+                        const stableId = `cal_${this.hashCode(`${questName}_${startDateStr}_${endDateStr}`)}`;
+                        const key = `${questName}_${endDateStr}`;
+
+                        const existing = existingMap.get(stableId);
+                        if (!existing) {
+                            // New event
+                            updatedEvents.push({
+                                id: stableId,
+                                name: questName,
+                                type: 'calendar',
+                                points: 1,
+                                completed: completionMap.get(key) || false,
+                                reminder_time: event.start ? this.formatTime12hr(event.start) : null,
+                                expires: endDateStr,
+                                created_at: new Date().toISOString()
+                            });
+                        } else {
+                            // Existing event – preserve its completed flag, but update other fields
+                            existing.reminder_time = event.start ? this.formatTime12hr(event.start) : null;
+                            existing.expires = endDateStr;
+                            updatedEvents.push(existing);
+                        }
+                    }
+                } catch(e) {
+                    console.warn('Failed to fetch calendar:', feed.url, e);
+                }
+            }
+
+            // Remove duplicates by ID (just in case)
+            const unique = [];
+            const seenIds = new Set();
+            for (const ev of updatedEvents) {
+                if (!seenIds.has(ev.id)) {
+                    seenIds.add(ev.id);
+                    unique.push(ev);
+                }
+            }
+
+            // Save to server via PUT (the server will upsert, preserving foreign keys)
+            await this.saveCalendarQuests(unique);
+
+            // Merge with regular quests (main/side)
+            const regularQuests = this.quests.filter(q => q.type !== 'calendar');
+            this.quests = [...regularQuests, ...unique];
+            this.saveData();
+            this.render();
+        },
+
+        async fetchCalendarEvents(calendarUrl) {
+            if (!calendarUrl) return [];
+            try {
+                const proxyUrl = `api.php?action=ical_proxy&url=${encodeURIComponent(calendarUrl)}`;
+                const response = await fetch(proxyUrl);
+                if (!response.ok) return [];
+                const icalData = await response.text();
+                return this.parseICal(icalData);
+            } catch(e) {
+                console.warn('Failed to fetch calendar:', e);
+                return [];
+            }
+        },
+
+        async saveCalendarQuests(quests) {
+            try {
+                await fetch('api.php?action=calendar_quests', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quests: quests, lastUpdated: new Date().toISOString() })
+                });
+            } catch(e) {
+                console.warn('Could not save calendar quests:', e);
+            }
+        },
+
+        parseICal(icalData) {
+            const events = [];
+            const lines = icalData.split(/\r?\n/);
+            let currentEvent = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                while (lines[i+1] && lines[i+1].startsWith(' ')) {
+                    line += lines[i+1].trim();
+                    i++;
+                }
+
+                if (line === 'BEGIN:VEVENT') {
+                    currentEvent = {};
+                } else if (line === 'END:VEVENT' && currentEvent && currentEvent.summary) {
+                    // Only keep events with DESCRIPTION:ical
+                    if (currentEvent.description && currentEvent.description.toLowerCase().includes('ical')) {
+                        events.push(currentEvent);
+                    }
+                    currentEvent = null;
+                } else if (currentEvent) {
+                    const colonIndex = line.indexOf(':');
+                    if (colonIndex === -1) continue;
+                    const key = line.substring(0, colonIndex).split(';')[0];
+                    let value = line.substring(colonIndex + 1);
+
+                    if (key === 'SUMMARY') {
+                        currentEvent.summary = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                    } else if (key === 'DESCRIPTION') {
+                        currentEvent.description = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                    } else if (key === 'DTSTART') {
+                        // Handle TZID prefix
+                        let dateStr = value;
+                        if (dateStr.includes(':')) {
+                            const parts = dateStr.split(':');
+                            dateStr = parts[parts.length - 1];
+                        }
+                        const startDate = this.parseICalDate(dateStr);
+                        if (startDate) currentEvent.start = startDate;
+                    } else if (key === 'DTEND') {
+                        let dateStr = value;
+                        if (dateStr.includes(':')) {
+                            const parts = dateStr.split(':');
+                            dateStr = parts[parts.length - 1];
+                        }
+                        const endDate = this.parseICalDate(dateStr);
+                        if (endDate) currentEvent.end = endDate;
+                    } else if (key === 'RRULE') {
+                        currentEvent.rrule = value;
+                    } else if (key === 'UID') {
+                        currentEvent.uid = value;
+                    }
+                }
+            }
+
+            // Expand recurring events
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const thirtyDaysLater = new Date(today);
+            thirtyDaysLater.setDate(today.getDate() + 30);
+            const expandedEvents = [];
+
+            for (const event of events) {
+                if (!event.start) continue;
+
+                if (event.rrule && event.rrule.includes('FREQ=WEEKLY')) {
+                    // Weekly recurrence: generate all occurrences within the next 30 days
+                    let currentStart = new Date(event.start);
+                    const dayOfWeek = currentStart.getDay(); // 0-6 Sunday=0
+                    const endDate = event.end ? new Date(event.end) : new Date(currentStart);
+                    const duration = endDate - currentStart; // ms
+
+                    // Find the first occurrence on or after today
+                    while (currentStart < today) {
+                        currentStart.setDate(currentStart.getDate() + 7);
+                    }
+                    // Generate up to 30 days ahead
+                    while (currentStart <= thirtyDaysLater) {
+                        const occurrenceEnd = new Date(currentStart.getTime() + duration);
+                        expandedEvents.push({
+                            summary: event.summary,
+                            start: new Date(currentStart),
+                            end: occurrenceEnd,
+                            uid: event.uid + '_' + currentStart.toISOString().slice(0,10),
+                            description: event.description
+                        });
+                        currentStart.setDate(currentStart.getDate() + 7);
+                    }
+                } else {
+                    // Single event or yearly (already handled separately, but we treat as one-off)
+                    // For yearly, we could expand, but keep simple for now.
+                    expandedEvents.push(event);
+                }
+            }
+
+            // Filter events that are today or in the future, and within 30 days
+            const upcomingEvents = [];
+            for (const event of expandedEvents) {
+                let eventDate = event.start;
+                // For multi-day, use end date as expiry?
+                const expiryDate = event.end ? event.end : event.start;
+                if (expiryDate >= today && expiryDate <= thirtyDaysLater) {
+                    upcomingEvents.push({
+                        summary: event.summary,
+                        start: event.start,
+                        end: event.end,
+                        uid: event.uid,
+                        expires: expiryDate.toDateString()
+                    });
+                }
+            }
+
+            // Sort by start date
+            upcomingEvents.sort((a, b) => a.start - b.start);
+            return upcomingEvents;
+        },
+
+        // Helper to parse iCal date string like "20260526T120000"
+        parseICalDate(dateStr) {
+            if (!dateStr.match(/^\d{8}(T\d{6})?$/)) return null;
+            let year = parseInt(dateStr.substring(0, 4));
+            let month = parseInt(dateStr.substring(4, 6)) - 1;
+            let day = parseInt(dateStr.substring(6, 8));
+            let hour = 0, minute = 0, second = 0;
+            if (dateStr.length >= 15 && dateStr.includes('T')) {
+                const timePart = dateStr.split('T')[1];
+                hour = parseInt(timePart.substring(0, 2));
+                minute = parseInt(timePart.substring(2, 4));
+                second = parseInt(timePart.substring(4, 6));
+            }
+            return new Date(year, month, day, hour, minute, second);
+        },
+
+        render() {
+            this.updatePoints();
+            this.renderMissedQuests();
+            this.renderCalendarQuests();
+            this.renderQuests();
+            this.renderShop();
+            this.renderCompleted();
+        },
+
+        updatePoints() {
+            document.getElementById('displayTotalPoints').textContent = this.totalPoints;
+            document.getElementById('totalPoints').textContent = this.todayPoints;
+            const supEl = document.getElementById('displayTodayPoints');
+            supEl.textContent = this.todayPoints > 0 ? '+' + this.todayPoints : '';
+            this.checkSideQuestUnlock();
+        },
+
+        checkSideQuestUnlock() {
+            const mainQuests = this.quests.filter(q => q.type === 'main' && this.isQuestVisibleToday(q));
+            const completedMain = mainQuests.filter(q => q.completed).length;
+            this.sideQuestUnlocked = completedMain >= Math.ceil(mainQuests.length * 0.25);
+        },
+
+        renderMissedQuests() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toDateString();
+
+            const missedQuests = this.quests.filter(quest => {
+                const wasVisible = this.wasVisibleYesterday(quest);
+                const wasMissed = quest.missed === true;
+                return wasVisible && !quest.completed && (wasMissed || !this.isQuestVisibleToday(quest));
+            });
+
+            const container = document.getElementById('missedSection');
+            if (!missedQuests.length) { container.innerHTML = ''; return; }
+
+            const isCollapsed = localStorage.getItem('missedSectionCollapsed') === 'true';
+            const section = document.createElement('div');
+            section.className = 'missed-section';
+            section.innerHTML = `
+                <div class="missed-header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="margin:0;">⚠️ Missed Yesterday (${missedQuests.length})</h3>
+                    <div class="missed-toggle" style="transition:transform 0.3s; ${isCollapsed ? 'transform:rotate(-90deg);' : ''}">▼</div>
+                </div>
+                <div class="missed-content" style="${isCollapsed ? 'display:none;' : ''}"></div>
+            `;
+            const header = section.querySelector('.missed-header');
+            const content = section.querySelector('.missed-content');
+            const toggle = section.querySelector('.missed-toggle');
+            header.onclick = () => {
+                const nowCollapsed = content.style.display === 'none';
+                content.style.display = nowCollapsed ? 'block' : 'none';
+                toggle.style.transform = nowCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+                localStorage.setItem('missedSectionCollapsed', nowCollapsed ? 'false' : 'true');
+            };
+            missedQuests.forEach(quest => {
+                const item = document.createElement('div');
+                item.className = 'missed-quest';
+                item.innerHTML = `<div class="missed-quest-name">${quest.name}</div><div class="missed-quest-date">${quest.missedDate || yesterdayStr}</div>`;
+                content.appendChild(item);
+            });
+            container.innerHTML = '';
+            container.appendChild(section);
+        },
+
+        extractGroupInfo(quest) {
+            // Match pattern like " (1x)" at the end of the name
+            const match = quest.name.match(/^(.*?)\s*\((\d+)x\)$/);
+            if (match) {
+                return {
+                    base: match[1].trim(),
+                    step: parseInt(match[2], 10)
+                };
+            }
+            return null;
+        },
+
+        filterActiveQuests(quests) {
+            // First, group quests by their base name (for progressive chains)
+            const groups = new Map(); // base -> array of quests with steps
+            const nonGrouped = [];
+
+            for (const q of quests) {
+                if (q.completed) continue;
+                const groupInfo = this.extractGroupInfo(q);
+                if (groupInfo) {
+                    const base = groupInfo.base;
+                    if (!groups.has(base)) groups.set(base, []);
+                    groups.get(base).push({ quest: q, step: groupInfo.step });
+                } else {
+                    nonGrouped.push(q);
+                }
+            }
+
+            const result = [];
+
+            // For each progressive group, pick the smallest step that is incomplete
+            for (const [base, items] of groups) {
+                items.sort((a, b) => a.step - b.step);
+                // Find first incomplete quest in this chain
+                for (const item of items) {
+                    if (!item.quest.completed) {
+                        result.push(item.quest);
+                        break; // only show one per chain
+                    }
+                }
+            }
+
+            // Add non‑grouped quests (including standard groups from group_name)
+            const seenGroups = new Set();
+            for (const q of nonGrouped) {
+                if (q.group_name) {
+                    if (seenGroups.has(q.group_name)) continue;
+                    seenGroups.add(q.group_name);
+                }
+                result.push(q);
+            }
+
+            return result;
+        },
+
+        renderQuests() {
+            const container = document.getElementById('questsContainer');
+            container.innerHTML = '';
+
+            const allMain = this.quests.filter(q => q.type === 'main' && this.isQuestVisibleToday(q));
+            const allSide = this.quests.filter(q => q.type === 'side' && this.isQuestVisibleToday(q));
+            const completedMain = allMain.filter(q => q.completed).length;
+            const required = Math.ceil(allMain.length * 0.25);
+
+            if (!this.sideQuestUnlocked && allSide.length) {
+                const lockMsg = document.createElement('div');
+                lockMsg.className = 'lock-message';
+                lockMsg.innerHTML = `🔒 Complete ${required} main quests (${completedMain}/${required}) to unlock side quests!`;
+                container.appendChild(lockMsg);
+            }
+
+            const main = this.filterActiveQuests(allMain);
+            const side = this.filterActiveQuests(allSide);
+
+            if (main.length) container.appendChild(this.createQuestSection('🎪 Main Quests', main, false));
+            if (side.length) container.appendChild(this.createQuestSection('⭐ Side Quests', side, this.sideQuestUnlocked));
+        },
+
+        createQuestSection(title, quests, unlocked) {
+            const section = document.createElement('div');
+            section.className = 'quest-section';
+            section.innerHTML = `<div class="quest-section-header" onclick="this.parentElement.querySelector('.quest-list').classList.toggle('hidden'); this.querySelector('.section-toggle').classList.toggle('collapsed')"><h2>${title}</h2><div class="section-toggle">▼</div></div><div class="quest-list"></div>`;
+            const list = section.querySelector('.quest-list');
+            quests.forEach(quest => {
+                const reminderHtml = quest.reminder_time ? `<span style="margin-left:0.5rem;">⏰ ${quest.reminder_time}</span>` : '';
+                const item = document.createElement('div');
+                item.className = `quest-item ${quest.completed ? 'completed' : ''}${!unlocked && quest.type === 'side' ? ' locked' : ''}`;
+                item.innerHTML = `
+                    <input type="checkbox" class="quest-checkbox" ${quest.completed ? 'checked' : ''} ${!unlocked && quest.type === 'side' ? 'disabled' : ''} onchange="app.toggleQuest('${quest.id}', '${quest.name}', ${quest.points || 1})">
+                    <div class="quest-info"><p class="quest-name">${quest.name}</p><p class="quest-details">${quest.schedule || 'Daily'} ${reminderHtml}</p></div>
+                    <div class="quest-points">${quest.points || 1} pts</div>
+                `;
+                list.appendChild(item);
+            });
+            return section;
+        },
+
+        async toggleQuest(id, name, points) {
+            const quest = this.quests.find(q => q.id === id);
+            if (!quest) return;
+            if (quest.type === 'side' && !this.sideQuestUnlocked) return;
+
+            const newCompleted = !quest.completed;
+            const wasCompleted = quest.completed;
+
+            try {
+                const res = await fetch('api.php?action=toggle_quest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        quest_id: id,
+                        quest_name: name,
+                        points: points,
+                        completed: newCompleted
+                    })
+                });
+
+                if (res.ok) {
+                    quest.completed = newCompleted;
+                    quest.missed = false;
+
+                    if (newCompleted) {
+                        this.saveLastToggle(quest.id, wasCompleted, points);
+                    }
+
+                    await this.loadPoints();
+                    await this.loadCompletions();
+                    this.render();
+                } else {
+                    console.error('Failed to toggle quest');
+                }
+            } catch(e) {
+                console.error('Error toggling quest:', e);
+            }
+        },
+
+        renderCompleted() {
+            const completed = this.quests.filter(q => q.completed && this.isQuestVisibleToday(q));
+            const container = document.getElementById('completedSection');
+            if (!completed.length) { container.innerHTML = ''; return; }
+            const section = document.createElement('div');
+            section.className = 'completed-section';
+            section.innerHTML = `<div class="completed-section-header" onclick="this.parentElement.querySelector('.completed-list').classList.toggle('hidden'); this.querySelector('.section-toggle').classList.toggle('collapsed')"><h2>✅ Completed Today (${completed.length})</h2><div class="section-toggle">▼</div></div><div class="completed-list"></div>`;
+            const list = section.querySelector('.completed-list');
+            completed.forEach(quest => {
+                const item = document.createElement('div');
+                item.className = 'completed-item';
+                item.innerHTML = `<div class="completed-item-name">${quest.name}</div><div class="completed-item-points">+${quest.points || 1} pts</div>`;
+                list.appendChild(item);
+            });
+            container.innerHTML = '';
+            container.appendChild(section);
+        },
+
+        renderCalendarQuests() {
+            const calendarQuests = this.quests.filter(q => q.type === 'calendar' && this.isQuestVisibleToday(q) && !q.completed);
+            const section = document.getElementById('calendarQuestsSection');
+            const container = document.getElementById('calendarQuestsList');
+            const header = document.getElementById('calendarSectionHeader');
+            const toggle = document.getElementById('calendarToggle');
+
+            if (!calendarQuests.length) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = 'block';
+            container.innerHTML = '';
+            if (header && !header._toggleAdded) {
+                header.onclick = () => {
+                    container.classList.toggle('hidden');
+                    toggle.classList.toggle('collapsed');
+                };
+                header._toggleAdded = true;
+            }
+
+            calendarQuests.forEach(quest => {
+                const item = document.createElement('div');
+                item.className = 'quest-item';
+                item.innerHTML = `
+                    <input type="checkbox" class="quest-checkbox" ${quest.completed ? 'checked' : ''} onchange="app.toggleQuest('${quest.id}', '${quest.name}', ${quest.points || 1})">
+                    <div class="quest-info">
+                        <p class="quest-name">${quest.name}</p>
+                        <p class="quest-details">${quest.reminder_time ? `⏰ ${quest.reminder_time}` : 'Calendar Event'}</p>
+                    </div>
+                    <div class="quest-points">${quest.points || 1} pts</div>
+                `;
+                container.appendChild(item);
+            });
+        },
+
+        async renderShop() {
+            const container = document.getElementById('shopItems');
+            container.innerHTML = '';
+            if (!this.shopItems.length) {
+                container.innerHTML = '<div style="text-align:center; color:var(--olive-light); padding:1rem;">No shop items yet.<br>Add some in Manager!</div>';
+                return;
+            }
+            for (const item of this.shopItems) {
+                const el = document.createElement('div');
+                el.className = 'shop-item';
+                const nameSpan = document.createElement('div');
+                nameSpan.innerHTML = `<p class="shop-item-name">${item.name}</p><p class="shop-item-cost">${item.cost} points</p>`;
+                const btn = document.createElement('button');
+                btn.className = 'redeem-btn';
+                if (this.totalPoints < item.cost) btn.disabled = true;
+                btn.textContent = 'Redeem';
+                btn.onclick = () => { app.redeemReward(item.name, item.cost); };
+                el.appendChild(nameSpan);
+                el.appendChild(btn);
+                container.appendChild(el);
+            }
+        },
+
+        async redeemReward(name, cost) {
+            if (this.totalPoints >= cost) {
+                try {
+                    const res = await fetch('api.php?action=redeem', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: name, cost: cost })
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                        await this.loadPoints();
+                        this.render();
+                        if (Notification.permission === 'granted') {
+                            new Notification('🎁 Reward Redeemed!', {
+                                body: `You redeemed: ${name}! Enjoy!`,
+                                icon: '/favicon.ico'
+                            });
+                        }
+                        alert('🎉 You earned: ' + name + '! Enjoy! 🎁');
+                    } else {
+                        alert('Need ' + (cost - this.totalPoints) + ' more points!');
+                    }
+                } catch(e) {
+                    console.error('Redeem failed:', e);
+                    alert('Error redeeming reward. Please try again.');
+                }
+            } else {
+                alert('Need ' + (cost - this.totalPoints) + ' more points!');
+            }
+        },
+
+        toggleShop() {
+            document.getElementById('shopItems').classList.toggle('hidden');
+            document.getElementById('shopToggle').classList.toggle('collapsed');
+        },
+
+        openManager() { window.location.href = 'manager.html'; },
+        openHistory() { window.location.href = 'history.html'; },
+        openAchievements() { window.location.href = 'achievements.html'; },
+
+        async loadAvatar() {
+            try {
+                const res = await fetch('api.php?action=avatar');
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    document.getElementById('playerAvatar').innerHTML = `<img src="${url}" alt="Player 1" style="width:100%; height:100%; object-fit:cover;">`;
+                }
+            } catch(e) { document.getElementById('playerAvatar').innerHTML = '🎮'; }
+        },
+
+        addBonusPointsForMissed() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toDateString();
+
+            // Check if bonus already given today (prevent double-giving)
+            const lastBonusDate = localStorage.getItem('lastBonusDate');
+            if (lastBonusDate === new Date().toDateString()) {
+                return;
+            }
+
+            // Find missed quests from yesterday
+            const missedQuests = this.quests.filter(quest => {
+                const wasVisible = this.wasVisibleYesterday(quest);
+                return wasVisible && !quest.completed;
+            });
+
+            if (missedQuests.length > 0) {
+                const bonusPoints = missedQuests.length; // 1 point per missed quest
+                // Remove this line: this.userData.totalPoints += bonusPoints;
+                this.addToHistory('bonus', `Bonus for ${missedQuests.length} missed quest${missedQuests.length !== 1 ? 's' : ''}`, bonusPoints);
+                localStorage.setItem('lastBonusDate', new Date().toDateString());
+                this.saveData();
+                this.render(); // render will call updatePoints which calls loadPoints
+                console.log(`✨ Added ${bonusPoints} bonus points for missed quests`);
+            }
+        },
+
+    };
+
+    app.init();
+    window.app = app;
+</script>
+</body>
+</html>

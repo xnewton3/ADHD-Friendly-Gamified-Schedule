@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline';">
+    <title>Quest History</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --jade: #4a7c59;
+            --jade-dark: #2d4a37;
+            --olive: #6b7d54;
+            --olive-light: #8a9968;
+            --dark-grey: #1a1a1a;
+            --dark-grey-2: #2a2a2a;
+            --dark-grey-3: #3a3a3a;
+            --cream: #e6d5b8;
+            --accent: #d4a574;
+            --success: #52b788;
+            --warning: #e8971f;
+            --error: #d62828;
+        }
+        html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); padding-top: max(5px, env(safe-area-inset-top)); padding-bottom: max(5px, env(safe-area-inset-bottom)); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 2px solid var(--jade); padding-bottom: 0.5rem; }
+        .header h1 { color: var(--jade); font-size: 2rem; }
+        .nav-back button, .reload-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+        .controls { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+        .control-group { display: flex; flex-direction: column; gap: 0.25rem; }
+        .control-group label { font-size: 0.8rem; }
+        .control-group input, .control-group select { padding: 0.5rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); }
+        .history-container { display: flex; flex-direction: column; gap: 1rem; }
+        .day-group { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; }
+        .day-header { background: var(--jade-dark); padding: 0.75rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .day-header:hover { background: var(--jade); }
+        .day-header h2 { font-size: 1rem; }
+        .day-toggle { transition: transform 0.3s; }
+        .day-toggle.collapsed { transform: rotate(-90deg); }
+        .day-stats { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--olive-light); }
+        .day-content { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .day-content.hidden { display: none; }
+        .history-item { background: var(--dark-grey-3); padding: 0.5rem 0.75rem; border-radius: 6px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }
+        .history-item.reward { border-left-color: var(--success); }
+        .history-item.quest { border-left-color: var(--jade); }
+        .history-item.bonus { border-left-color: var(--warning); }
+        .history-item.achievement { border-left-color: var(--gold, #ffd700); }
+        .history-item-points { background: var(--jade); padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: 600; font-size: 0.75rem; }
+        .history-item.reward .history-item-points { background: var(--success); }
+        .history-item.bonus .history-item-points { background: var(--warning); }
+        .history-item.achievement .history-item-points { background: #ffd700; color: var(--dark-grey); }
+        .stats-summary { background: var(--dark-grey-2); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; }
+        .stat-card { background: var(--dark-grey-3); padding: 0.75rem; border-radius: 6px; text-align: center; border-left: 3px solid var(--jade); }
+        .stat-card .value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+        .stat-card .label { font-size: 0.7rem; text-transform: uppercase; color: var(--olive-light); }
+        @media (max-width: 600px) { .controls { grid-template-columns: 1fr; } .day-stats { display: none; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Quests</button> <button class="reload-btn" onclick="location.reload()">🔄 Refresh</button></div>
+    <div class="header"><h1>📊 Quest History</h1></div>
+
+    <div class="controls">
+        <div class="control-group"><label>🔍 Search</label><input type="text" id="searchInput" placeholder="Search..." oninput="history.filterHistory()"></div>
+        <div class="control-group"><label>📅 Sort By</label><select id="sortBy" onchange="history.filterHistory()"><option value="date-desc">Newest First</option><option value="date-asc">Oldest First</option><option value="points-high">Most Points</option><option value="points-low">Least Points</option></select></div>
+        <div class="control-group"><label>📋 Type</label><select id="filterType" onchange="history.filterHistory()"><option value="all">All</option><option value="reward">Rewards</option><option value="quest">Quests</option><option value="bonus">Bonuses</option><option value="achievement">Achievements</option></select></div>
+    </div>
+
+    <div class="stats-summary" id="statsSummary">Loading stats...</div>
+    <div class="history-container" id="historyContainer">Loading history...</div>
+</div>
+
+<script>
+    const history = {
+        allData: [],
+        filteredData: [],
+        stats: {},
+
+        async init() {
+            await this.loadData();
+            await this.loadStats();
+            this.filterHistory();
+        },
+
+        async loadData() {
+            try {
+                const res = await fetch('api.php?action=history');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.allData = data.history || [];
+                    console.log('Loaded', this.allData.length, 'history entries');
+                }
+            } catch (e) { console.error('Could not load history:', e); this.allData = []; }
+        },
+
+        async loadStats() {
+            try {
+                const res = await fetch('api.php?action=history_stats');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.stats = data;
+                }
+            } catch (e) { console.error('Could not load stats:', e); this.stats = {}; }
+        },
+
+        filterHistory() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const sort = document.getElementById('sortBy').value;
+            const filterType = document.getElementById('filterType').value;
+
+            this.filteredData = this.allData.filter(item => {
+                const matchesSearch = !search || item.description?.toLowerCase().includes(search);
+                const matchesType = filterType === 'all' ||
+                    (filterType === 'reward' && item.type === 'reward_redeem') ||
+                    (filterType === 'quest' && item.type === 'quest_complete') ||
+                    (filterType === 'bonus' && item.type === 'bonus') ||
+                    (filterType === 'achievement' && item.type === 'achievement');
+                return matchesSearch && matchesType;
+            });
+
+            this.filteredData.sort((a, b) => {
+                switch(sort) {
+                    case 'date-asc': return new Date(a.date) - new Date(b.date);
+                    case 'points-high': return Math.abs(b.points) - Math.abs(a.points);
+                    case 'points-low': return Math.abs(a.points) - Math.abs(b.points);
+                    default: return new Date(b.timestamp) - new Date(a.timestamp);
+                }
+            });
+
+            this.renderHistory();
+            this.renderStats();
+        },
+
+        renderHistory() {
+            const container = document.getElementById('historyContainer');
+            if (!this.filteredData.length) {
+                container.innerHTML = '<div class="empty-state"><p>📭 No history yet. Complete quests or redeem rewards to get started!</p></div>';
+                return;
+            }
+
+            const grouped = {};
+            this.filteredData.forEach(item => {
+                const date = item.date;
+                if (!grouped[date]) grouped[date] = [];
+                grouped[date].push(item);
+            });
+
+            container.innerHTML = '';
+            Object.entries(grouped).forEach(([date, items]) => {
+                const rewards = items.filter(i => i.type === 'reward_redeem');
+                const quests = items.filter(i => i.type === 'quest_complete');
+                const bonuses = items.filter(i => i.type === 'bonus');
+                const achievements = items.filter(i => i.type === 'achievement');
+                const totalPoints = items.reduce((sum, i) => sum + i.points, 0);
+
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'day-group';
+                dayDiv.innerHTML = `
+                    <div class="day-header" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.day-toggle').classList.toggle('collapsed')">
+                        <h2>${new Date(date).toDateString()}</h2>
+                        <div class="day-stats">
+                            ${quests.length ? `<span>✅ ${quests.length}</span>` : ''}
+                            ${rewards.length ? `<span>🍫 ${rewards.length}</span>` : ''}
+                            ${bonuses.length ? `<span>✨ ${bonuses.length}</span>` : ''}
+                            ${achievements.length ? `<span>🏆 ${achievements.length}</span>` : ''}
+                            <span>${totalPoints >= 0 ? '+' : ''}${totalPoints} pts</span>
+                        </div>
+                        <div class="day-toggle">▼</div>
+                    </div>
+                    <div class="day-content"></div>
+                `;
+
+                const content = dayDiv.querySelector('.day-content');
+                items.forEach(item => {
+                    let icon = '';
+                    let className = 'history-item';
+                    let displayName = item.description;
+
+                    if (item.type === 'reward_redeem') {
+                        icon = '🍫';
+                        className += ' reward';
+                    } else if (item.type === 'quest_complete') {
+                        icon = '✅';
+                        className += ' quest';
+                    } else if (item.type === 'bonus') {
+                        icon = '✨';
+                        className += ' bonus';
+                    } else if (item.type === 'achievement') {
+                        icon = '🏆';
+                        className += ' achievement';
+                    } else {
+                        icon = '📝';
+                    }
+
+                    const pointsText = item.points > 0 ? `+${item.points}` : `${item.points}`;
+
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = className;
+                    itemDiv.innerHTML = `<div class="history-item-name">${icon} ${displayName}</div><div class="history-item-points">${pointsText} pts</div>`;
+                    content.appendChild(itemDiv);
+                });
+
+                container.appendChild(dayDiv);
+            });
+        },
+
+        renderStats() {
+            const container = document.getElementById('statsSummary');
+            const totalRewards = this.filteredData.filter(i => i.type === 'reward_redeem').length;
+            const totalAchievements = this.filteredData.filter(i => i.type === 'achievement').length;
+            const totalPoints = this.filteredData.reduce((sum, i) => sum + i.points, 0);
+            const totalDays = new Set(this.filteredData.map(i => i.date)).size;
+
+            container.innerHTML = `
+                <div class="stat-card"><div class="value">${totalRewards}</div><div class="label">Rewards</div></div>
+                <div class="stat-card"><div class="value">${totalAchievements}</div><div class="label">Achievements</div></div>
+                <div class="stat-card"><div class="value">${totalPoints > 0 ? '+' : ''}${totalPoints}</div><div class="label">Net Points</div></div>
+                <div class="stat-card"><div class="value">${totalDays}</div><div class="label">Days Active</div></div>
+            `;
+        }
+    };
+
+    history.init();
+</script>
+</body>
+</html>
