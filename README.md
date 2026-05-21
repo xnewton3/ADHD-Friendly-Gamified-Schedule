@@ -121,7 +121,7 @@ ADHD-Friendly-Gamified-Schedule/
 ---
 ## 🔧 Configuration
 
-### Changing the public stats password
+### Changing the stats password
 
 Edit `stats.html`, change the `accessCode` variable (line 85):
 ```javascript
