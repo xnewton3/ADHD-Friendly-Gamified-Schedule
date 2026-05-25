@@ -96,20 +96,17 @@
         @media (max-width: 768px) { .sidebar { grid-template-columns: 1fr; } .header { flex-direction: column; text-align: center; } .player-info { width: 100%; justify-content: space-between; } .logout-btn-mobile { display: inline-block; } .header-actions { justify-content: center; flex-wrap: wrap; } }
         @media (min-width: 769px) { .logout-btn-mobile { display: none; } }
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; }
-        /* Mobile logout button (inside player-info) */
         .logout-btn-mobile {
             background: var(--dark-grey-3);
             color: var(--cream);
             border: 1px solid var(--olive);
             padding: 0.25rem 0.5rem;
             border-radius: 6px;
-            font-size: 1.1rem;    /* same size as the emoji buttons */
+            font-size: 1.1rem;
             min-width: 44px;
             height: 44px;
             margin-left: auto;
         }
-
-        /* Desktop logout button (inside header-actions) */
         .logout-btn-desktop {
             background: var(--dark-grey-3);
             color: var(--cream);
@@ -304,7 +301,6 @@
         async saveData() {
             if (!this.userData) return;
 
-            // Create a clean copy without circular references
             const dataToSave = {
                 user: this.userData,
                 quests: this.quests,
@@ -329,7 +325,6 @@
             const today = new Date().toDateString();
             const playerName = this.userData?.name || 'Player 1';
 
-            // Format description consistently
             let formattedDescription = description;
             if (type === 'reward_redeem' && !description.startsWith(playerName)) {
                 formattedDescription = `${playerName} ${description}`;
@@ -342,21 +337,19 @@
             const entry = {
                 type: type,
                 description: formattedDescription,
-                points: points,  // Store as integer (positive or negative)
+                points: points,
                 date: today,
                 timestamp: new Date().toISOString()
             };
 
             this.history.push(entry);
 
-            // Save to server via the history endpoint
             fetch('api.php?action=history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: [entry] })
             }).catch(e => console.warn('Could not save to server:', e));
 
-            // Keep only last 30 days locally
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
             this.history = this.history.filter(h => new Date(h.timestamp) > thirtyDaysAgo);
@@ -368,7 +361,7 @@
             if (this.userData.lastReset !== today) {
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayDate = yesterday.toDateString();
+                const yesterdayStr = yesterday.toDateString();
 
                 // 1. Remove expired calendar quests (expires < today)
                 this.quests = this.quests.filter(quest => {
@@ -379,24 +372,39 @@
                     return true;
                 });
 
-                // 2. Process remaining quests: mark missed, delete completed one-time
+                // 2. Process non‑calendar quests: mark missed, delete one‑time completed
                 const keepQuests = [];
-                this.quests.forEach(quest => {
-                    if (quest.type !== 'calendar') {
-                        const isOneTime = quest.schedule === 'One-time';
-                        if (isOneTime && quest.completed) {
-                            console.log(`🗑️ Removing completed one-time quest: ${quest.name}`);
-                            return;
-                        }
-                        if (!quest.completed && quest.schedule !== 'One-time' && !quest.specific_dates && !this.matchesDatePattern(quest.schedule, yesterday)) {
-                            if (!quest.missed) {
-                                quest.missed = true;
-                                quest.missedDate = yesterdayDate;
-                            }
-                        }
+                for (const quest of this.quests) {
+                    if (quest.type === 'calendar') {
+                        keepQuests.push(quest);
+                        continue;
                     }
+
+                    const isOneTime = quest.schedule === 'One-time';
+                    if (isOneTime && quest.completed) {
+                        console.log(`🗑️ Removing completed one-time quest: ${quest.name}`);
+                        continue;
+                    }
+
+                    // Mark missed ONLY if:
+                    // - quest was visible yesterday
+                    // - not completed yesterday
+                    // - not already marked missed
+                    const wasVisible = this.wasVisibleYesterday(quest);
+                    if (wasVisible && !quest.completed && !quest.missed) {
+                        quest.missed = true;
+                        quest.missedDate = yesterdayStr;
+                        console.log(`⚠️ Marked as missed: ${quest.name}`);
+                    } else if (quest.completed) {
+                        // Completed quests should never be missed
+                        quest.missed = false;
+                    } else if (!wasVisible) {
+                        // If it wasn't visible yesterday, ensure missed is false
+                        quest.missed = false;
+                    }
+
                     keepQuests.push(quest);
-                });
+                }
 
                 this.quests = keepQuests;
                 this.userData.lastReset = today;
@@ -533,15 +541,11 @@
                     this.userData = data.user;
                     this.settings = data.settings;
 
-                    // Parse quests and convert JSON strings to arrays
                     this.quests = (data.quests || []).map(q => {
-                        // Parse days_visible if it's a JSON string
                         if (q.days_visible && typeof q.days_visible === 'string') {
                             try {
-                                // Try to parse as JSON first (for ["Monday", "Wednesday"])
                                 q.days_visible = JSON.parse(q.days_visible);
                             } catch(e) {
-                                // If it fails, treat it as a single day string and convert to array
                                 if (q.days_visible && q.days_visible !== 'null') {
                                     q.days_visible = [q.days_visible];
                                 } else {
@@ -549,19 +553,17 @@
                                 }
                             }
                         }
-                        // Parse specific_dates if it's a JSON string
                         if (q.specific_dates && typeof q.specific_dates === 'string') {
                             try {
                                 q.specific_dates = JSON.parse(q.specific_dates);
                             } catch(e) { q.specific_dates = null; }
                         }
-                        // After parsing days_visible and specific_dates, add:
                         if (!q.days_visible && q.schedule && !q.schedule.includes('/') && !q.schedule.includes('every other') && !q.schedule.includes('&')) {
                             const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
                             const scheduleDay = q.schedule.charAt(0).toUpperCase() + q.schedule.slice(1).toLowerCase();
                             if (dayNames.includes(scheduleDay)) {
                                 q.days_visible = [scheduleDay];
-                                q.schedule = 'Daily';   // keep schedule as Daily to avoid double‑matching
+                                q.schedule = 'Daily';
                             }
                         }
                         return q;
@@ -570,10 +572,7 @@
                     this.shopItems = data.shopItems || [];
                     this.calendarFeeds = data.calendarFeeds || [];
 
-                    // Load points
                     await this.loadPoints();
-
-                    // Load completions to set quest completed states
                     await this.loadCompletions();
 
                     return;
@@ -597,12 +596,11 @@
                 const res = await fetch('api.php?action=completions');
                 if (res.ok) {
                     const data = await res.json();
-                    console.log('Completions loaded:', data.completions); // Debug
                     const completions = data.completions || {};
                     this.quests.forEach(quest => {
                         quest.completed = completions[quest.id] ? completions[quest.id].completed : false;
                     });
-                    this.render(); // Force UI update
+                    this.render();
                 } else {
                     console.error('Completions fetch failed:', res.status);
                 }
@@ -707,8 +705,6 @@
             document.cookie = `quest_logged_in=true; expires=${expires.toUTCString()}; path=/; SameSite=Lax; Secure`;
         },
 
-        // ============ SCHEDULING FUNCTIONS ============
-
         matchesDatePattern(pattern, date) {
             if (!pattern || pattern === '&&/&&/&&&&') return true;
             const day = String(date.getDate()).padStart(2, '0');
@@ -763,12 +759,11 @@
             const today = customDate || new Date();
             const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
 
-            // If today is not the target weekday, it can't match
             if (todayName !== targetDay) return false;
 
             const date = today.getDate();
             const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-            const firstDayOfWeek = firstOfMonth.getDay(); // 0 = Sunday
+            const firstDayOfWeek = firstOfMonth.getDay();
             const targetDayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(targetDay);
             let occurrence = Math.ceil((date + (firstDayOfWeek - targetDayIndex)) / 7);
             if (occurrence < 1) occurrence = 1;
@@ -787,16 +782,16 @@
         },
 
         isQuestVisibleToday(quest) {
-            // Calendar quests
             if (quest.type === 'calendar') {
-                const today = new Date().toDateString();
-                return quest.expires === today;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const expiryDate = new Date(quest.expires);
+                expiryDate.setHours(0, 0, 0, 0);
+                return expiryDate.getTime() === today.getTime();
             }
 
-            // Specific dates
             if (this.isSpecificDateMatch(quest)) return true;
 
-            // Single date pattern in schedule
             if (quest.schedule && quest.schedule.includes('/')) {
                 const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
                 if (looksLikeDate) {
@@ -804,19 +799,14 @@
                 }
             }
 
-            // Bi-weekly
             if (this.isBiWeeklyMatch(quest)) return true;
-
-            // Nth weekday (like "2nd & 4th Saturday")
             if (this.isNthWeekdayMatch(quest)) return true;
 
-            // "Every weekend"
             if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
                 const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
                 return (today === 'Saturday' || today === 'Sunday');
             }
 
-            // Days visible (array of weekdays)
             if (quest.days_visible !== null && quest.days_visible !== undefined) {
                 let daysVisible = quest.days_visible;
                 if (typeof daysVisible === 'string') {
@@ -828,7 +818,6 @@
                 }
             }
 
-            // If schedule is a plain weekday name (e.g., "Monday") that wasn't caught earlier, treat it as a day
             if (quest.schedule) {
                 const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
                 const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
@@ -838,8 +827,6 @@
                 }
             }
 
-            // Default: show every day only if no special schedule is set
-            // But if the schedule is a complex pattern that didn't match, return false
             if (quest.schedule && (quest.schedule.includes('&') || quest.schedule.includes('every') || quest.schedule.includes('2nd') || quest.schedule.includes('1st'))) {
                 return false;
             }
@@ -850,6 +837,14 @@
         wasVisibleYesterday(quest) {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
+
+            if (quest.type === 'calendar') {
+                const expiryDate = new Date(quest.expires);
+                expiryDate.setHours(0, 0, 0, 0);
+                return expiryDate.getTime() === yesterday.getTime();
+            }
+
             if (this.isSpecificDateMatch(quest, yesterday)) return true;
             if (quest.schedule && quest.schedule.includes('/')) {
                 const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
@@ -869,21 +864,29 @@
                     return daysVisible.includes(yesterdayName);
                 }
             }
-            return true;
+
+            if (quest.schedule) {
+                const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
+                if (dayNames.includes(scheduleDay)) {
+                    const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
+                    return scheduleDay === yesterdayName;
+                }
+            }
+
+            return false;
         },
 
         async syncCalendarFeeds() {
             const calendarFeeds = this.calendarFeeds || [];
             if (calendarFeeds.length === 0) return;
 
-            // ✅ Use existing calendar quests from current state (they already have correct 'completed' from loadCompletions)
             const existingCalendarQuests = this.quests.filter(q => q.type === 'calendar');
             const existingMap = new Map();
             existingCalendarQuests.forEach(q => {
                 existingMap.set(q.id, q);
             });
 
-            // Completion map by name+expires (for new events that don't yet have an ID)
             const completionMap = new Map();
             existingCalendarQuests.forEach(q => {
                 const key = `${q.name}_${q.expires}`;
@@ -896,14 +899,12 @@
                     const events = await this.fetchCalendarEvents(feed.url);
                     for (const event of events) {
                         const startDateStr = event.start.toDateString();
-                        const endDateStr = (event.end || event.start).toDateString();
                         const questName = `📅 ${event.summary || 'Calendar Event'}`;
-                        const stableId = `cal_${this.hashCode(`${questName}_${startDateStr}_${endDateStr}`)}`;
-                        const key = `${questName}_${endDateStr}`;
+                        const stableId = `cal_${this.hashCode(`${questName}_${startDateStr}_${event.end ? event.end.toDateString() : startDateStr}`)}`;
+                        const key = `${questName}_${startDateStr}`;
 
                         const existing = existingMap.get(stableId);
                         if (!existing) {
-                            // New event
                             updatedEvents.push({
                                 id: stableId,
                                 name: questName,
@@ -911,13 +912,12 @@
                                 points: 1,
                                 completed: completionMap.get(key) || false,
                                 reminder_time: event.start ? this.formatTime12hr(event.start) : null,
-                                expires: endDateStr,
+                                expires: startDateStr,
                                 created_at: new Date().toISOString()
                             });
                         } else {
-                            // Existing event – preserve its completed flag, but update other fields
                             existing.reminder_time = event.start ? this.formatTime12hr(event.start) : null;
-                            existing.expires = endDateStr;
+                            existing.expires = startDateStr;
                             updatedEvents.push(existing);
                         }
                     }
@@ -926,7 +926,6 @@
                 }
             }
 
-            // Remove duplicates by ID (just in case)
             const unique = [];
             const seenIds = new Set();
             for (const ev of updatedEvents) {
@@ -936,13 +935,10 @@
                 }
             }
 
-            // Save to server via PUT (the server will upsert, preserving foreign keys)
             await this.saveCalendarQuests(unique);
 
-            // Merge with regular quests (main/side)
             const regularQuests = this.quests.filter(q => q.type !== 'calendar');
             this.quests = [...regularQuests, ...unique];
-            this.saveData();
             this.render();
         },
 
@@ -987,7 +983,6 @@
                 if (line === 'BEGIN:VEVENT') {
                     currentEvent = {};
                 } else if (line === 'END:VEVENT' && currentEvent && currentEvent.summary) {
-                    // Only keep events with DESCRIPTION:ical
                     if (currentEvent.description && currentEvent.description.toLowerCase().includes('ical')) {
                         events.push(currentEvent);
                     }
@@ -1003,7 +998,6 @@
                     } else if (key === 'DESCRIPTION') {
                         currentEvent.description = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
                     } else if (key === 'DTSTART') {
-                        // Handle TZID prefix
                         let dateStr = value;
                         if (dateStr.includes(':')) {
                             const parts = dateStr.split(':');
@@ -1027,7 +1021,6 @@
                 }
             }
 
-            // Expand recurring events
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const thirtyDaysLater = new Date(today);
@@ -1038,17 +1031,13 @@
                 if (!event.start) continue;
 
                 if (event.rrule && event.rrule.includes('FREQ=WEEKLY')) {
-                    // Weekly recurrence: generate all occurrences within the next 30 days
                     let currentStart = new Date(event.start);
-                    const dayOfWeek = currentStart.getDay(); // 0-6 Sunday=0
                     const endDate = event.end ? new Date(event.end) : new Date(currentStart);
-                    const duration = endDate - currentStart; // ms
+                    const duration = endDate - currentStart;
 
-                    // Find the first occurrence on or after today
                     while (currentStart < today) {
                         currentStart.setDate(currentStart.getDate() + 7);
                     }
-                    // Generate up to 30 days ahead
                     while (currentStart <= thirtyDaysLater) {
                         const occurrenceEnd = new Date(currentStart.getTime() + duration);
                         expandedEvents.push({
@@ -1061,17 +1050,13 @@
                         currentStart.setDate(currentStart.getDate() + 7);
                     }
                 } else {
-                    // Single event or yearly (already handled separately, but we treat as one-off)
-                    // For yearly, we could expand, but keep simple for now.
                     expandedEvents.push(event);
                 }
             }
 
-            // Filter events that are today or in the future, and within 30 days
             const upcomingEvents = [];
             for (const event of expandedEvents) {
                 let eventDate = event.start;
-                // For multi-day, use end date as expiry?
                 const expiryDate = event.end ? event.end : event.start;
                 if (expiryDate >= today && expiryDate <= thirtyDaysLater) {
                     upcomingEvents.push({
@@ -1084,12 +1069,10 @@
                 }
             }
 
-            // Sort by start date
             upcomingEvents.sort((a, b) => a.start - b.start);
             return upcomingEvents;
         },
 
-        // Helper to parse iCal date string like "20260526T120000"
         parseICalDate(dateStr) {
             if (!dateStr.match(/^\d{8}(T\d{6})?$/)) return null;
             let year = parseInt(dateStr.substring(0, 4));
@@ -1134,9 +1117,15 @@
             const yesterdayStr = yesterday.toDateString();
 
             const missedQuests = this.quests.filter(quest => {
+                if (quest.completed) return false;
+                if (quest.type === 'calendar') {
+                    const expiryDate = new Date(quest.expires);
+                    expiryDate.setHours(0, 0, 0, 0);
+                    yesterday.setHours(0, 0, 0, 0);
+                    return expiryDate.getTime() === yesterday.getTime() && !quest.completed;
+                }
                 const wasVisible = this.wasVisibleYesterday(quest);
-                const wasMissed = quest.missed === true;
-                return wasVisible && !quest.completed && (wasMissed || !this.isQuestVisibleToday(quest));
+                return wasVisible && !quest.completed;
             });
 
             const container = document.getElementById('missedSection');
@@ -1172,7 +1161,6 @@
         },
 
         extractGroupInfo(quest) {
-            // Match pattern like " (1x)" at the end of the name
             const match = quest.name.match(/^(.*?)\s*\((\d+)x\)$/);
             if (match) {
                 return {
@@ -1184,8 +1172,7 @@
         },
 
         filterActiveQuests(quests) {
-            // First, group quests by their base name (for progressive chains)
-            const groups = new Map(); // base -> array of quests with steps
+            const groups = new Map();
             const nonGrouped = [];
 
             for (const q of quests) {
@@ -1202,19 +1189,16 @@
 
             const result = [];
 
-            // For each progressive group, pick the smallest step that is incomplete
             for (const [base, items] of groups) {
                 items.sort((a, b) => a.step - b.step);
-                // Find first incomplete quest in this chain
                 for (const item of items) {
                     if (!item.quest.completed) {
                         result.push(item.quest);
-                        break; // only show one per chain
+                        break;
                     }
                 }
             }
 
-            // Add non‑grouped quests (including standard groups from group_name)
             const seenGroups = new Set();
             for (const q of nonGrouped) {
                 if (q.group_name) {
@@ -1291,7 +1275,7 @@
 
                 if (res.ok) {
                     quest.completed = newCompleted;
-                    quest.missed = false;
+                    if (newCompleted) quest.missed = false;
 
                     if (newCompleted) {
                         this.saveLastToggle(quest.id, wasCompleted, points);
@@ -1442,29 +1426,31 @@
             yesterday.setDate(yesterday.getDate() - 1);
             const yesterdayStr = yesterday.toDateString();
 
-            // Check if bonus already given today (prevent double-giving)
             const lastBonusDate = localStorage.getItem('lastBonusDate');
             if (lastBonusDate === new Date().toDateString()) {
                 return;
             }
 
-            // Find missed quests from yesterday
             const missedQuests = this.quests.filter(quest => {
-                const wasVisible = this.wasVisibleYesterday(quest);
-                return wasVisible && !quest.completed;
+                if (quest.completed) return false;
+                if (quest.type === 'calendar') {
+                    const expiryDate = new Date(quest.expires);
+                    expiryDate.setHours(0, 0, 0, 0);
+                    yesterday.setHours(0, 0, 0, 0);
+                    return expiryDate.getTime() === yesterday.getTime();
+                }
+                return this.wasVisibleYesterday(quest);
             });
 
             if (missedQuests.length > 0) {
-                const bonusPoints = missedQuests.length; // 1 point per missed quest
-                // Remove this line: this.userData.totalPoints += bonusPoints;
+                const bonusPoints = missedQuests.length;
                 this.addToHistory('bonus', `Bonus for ${missedQuests.length} missed quest${missedQuests.length !== 1 ? 's' : ''}`, bonusPoints);
                 localStorage.setItem('lastBonusDate', new Date().toDateString());
                 this.saveData();
-                this.render(); // render will call updatePoints which calls loadPoints
+                this.render();
                 console.log(`✨ Added ${bonusPoints} bonus points for missed quests`);
             }
         },
-
     };
 
     app.init();

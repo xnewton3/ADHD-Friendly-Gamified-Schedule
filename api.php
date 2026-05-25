@@ -268,7 +268,7 @@ if ($method === 'GET' && $action === 'points') {
     $totalPoints = $result['total'] ?? 0;
 
     $today = date('Y-m-d');
-    $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as today_total FROM history WHERE user_id = '$userId' AND date = '$today'", true);
+    $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as today_total FROM history WHERE user_id = '$userId' AND date = '$today' AND CAST(points AS INTEGER) > 0", true);
     $todayPoints = $result['today_total'] ?? 0;
 
     $db->close();
@@ -386,6 +386,26 @@ if ($method === 'POST' && $action === 'add_bonus') {
     exit;
 }
 
+// ============ UPDATE SETTINGS ============
+if ($method === 'POST' && $action === 'update_settings') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $db = get_db();
+    $userId = get_user_id();
+
+    $small = $data['small_reward_points'] ?? 10;
+    $big = $data['big_reward_points'] ?? 25;
+
+    $stmt = $db->prepare("UPDATE user_settings SET small_reward_points = :small, big_reward_points = :big WHERE user_id = :user");
+    $stmt->bindValue(':small', $small, SQLITE3_INTEGER);
+    $stmt->bindValue(':big', $big, SQLITE3_INTEGER);
+    $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
+    $stmt->execute();
+
+    $db->close();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 // ============ SHOP ENDPOINTS ============
 
 // GET shop items
@@ -417,6 +437,24 @@ if ($method === 'POST' && $action === 'add_shop_item') {
     $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
     $stmt->bindValue(':name', $data['name'], SQLITE3_TEXT);
     $stmt->bindValue(':cost', $data['cost'], SQLITE3_INTEGER);
+    $stmt->execute();
+
+    $db->close();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// POST update shop item
+if ($method === 'POST' && $action === 'update_shop_item') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $db = get_db();
+    $userId = get_user_id();
+
+    $stmt = $db->prepare("UPDATE shop_items SET name = :name, cost = :cost WHERE id = :id AND user_id = :user");
+    $stmt->bindValue(':name', $data['name'], SQLITE3_TEXT);
+    $stmt->bindValue(':cost', $data['cost'], SQLITE3_INTEGER);
+    $stmt->bindValue(':id', $data['id'], SQLITE3_INTEGER);
+    $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
     $stmt->execute();
 
     $db->close();

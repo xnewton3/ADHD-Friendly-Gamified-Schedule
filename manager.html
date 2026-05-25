@@ -199,7 +199,7 @@
             this.renderQuests();
             this.renderPasskeyStatus();
             this.renderCalendarFeeds();
-            await this.renderCalendarQuests();  // load upcoming calendar events
+            await this.renderCalendarQuests();
             this.renderShopItems();
         },
 
@@ -221,44 +221,44 @@
             } catch (e) { console.error(e); }
         },
 
-        async saveData() {
-            if (!this.data) return;
+        // Save quests (non-calendar) and settings
+        async saveAll() {
+            await this.saveQuests();
+            await this.saveSettings();
+            alert('💾 All changes saved!');
+        },
 
+        async saveQuests() {
+            // Only save non-calendar quests (main & side)
+            const nonCalendarQuests = this.quests.filter(q => q.type !== 'calendar');
+            try {
+                const res = await fetch('api.php?action=update_quests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quests: nonCalendarQuests })
+                });
+                if (!res.ok) throw new Error('Failed to save quests');
+                console.log('✅ Quests saved');
+            } catch(e) {
+                console.error('Error saving quests:', e);
+                alert('❌ Failed to save quests. Check console.');
+            }
+        },
+
+        async saveSettings() {
             const smallPts = parseInt(document.getElementById('smallRewardPts').value) || 10;
             const bigPts = parseInt(document.getElementById('bigRewardPts').value) || 25;
-            if (this.settings) {
-                this.settings.small_reward_points = smallPts;
-                this.settings.big_reward_points = bigPts;
-            }
-
-            const payload = {
-                user: this.data,
-                settings: this.settings,
-                quests: this.quests,
-                shopItems: this.shopItems,
-                calendarFeeds: this.calendarFeeds,
-                passkeyRegistered: true,
-                history: []
-            };
-
-            localStorage.setItem('questTrackerData', JSON.stringify(payload));
-
             try {
-                const res = await fetch('api.php', {
-                    method: 'PUT',
+                const res = await fetch('api.php?action=update_settings', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ small_reward_points: smallPts, big_reward_points: bigPts })
                 });
-                if (res.ok) {
-                    console.log('✅ Data saved to server');
-                    alert('💾 All changes saved!');
-                } else {
-                    console.error('Save failed:', res.status);
-                    alert('❌ Failed to save. Check console.');
-                }
+                if (!res.ok) throw new Error('Failed to save settings');
+                console.log('✅ Settings saved');
             } catch(e) {
-                console.warn('Could not save to server:', e);
-                alert('❌ Error saving. Check console.');
+                console.error('Error saving settings:', e);
+                alert('❌ Failed to save settings. Check console.');
             }
         },
 
@@ -308,7 +308,7 @@
                     const dragged = this.quests[this.draggedIndex];
                     this.quests.splice(this.draggedIndex, 1);
                     this.quests.splice(index, 0, dragged);
-                    this.saveData();
+                    this.saveQuests();
                     this.renderQuests();
                 }
                 this.draggedIndex = null;
@@ -337,21 +337,21 @@
             quest.points = parseInt(document.getElementById('editQuestPoints').value) || 1;
             quest.schedule = document.getElementById('editQuestSchedule').value || 'Daily';
             quest.reminder_time = document.getElementById('editQuestReminder').value || null;
-            this.saveData()
+            this.saveQuests();
             this.closeEditModal();
             this.renderQuests();
             alert('✅ Quest updated!');
         },
 
-        updateReminder(index, value) { this.quests[index].reminder_time = value || null; this.saveData(); },
+        updateReminder(index, value) { this.quests[index].reminder_time = value || null; this.saveQuests(); },
         escapeHtml(str) { return String(str || '').replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); },
-        updatePoints(index, value) { this.quests[index].points = Math.max(1, parseInt(value) || 1); this.saveData(); },
-        updateSchedule(index, value) { this.quests[index].schedule = value || 'Daily'; this.saveData(); },
+        updatePoints(index, value) { this.quests[index].points = Math.max(1, parseInt(value) || 1); this.saveQuests(); },
+        updateSchedule(index, value) { this.quests[index].schedule = value || 'Daily'; this.saveQuests(); },
 
         deleteQuest(index) {
             if (confirm(`Delete "${this.quests[index].name}"?`)) {
                 this.quests.splice(index, 1);
-                this.saveData();
+                this.saveQuests();
                 this.renderQuests();
             }
         },
@@ -368,7 +368,7 @@
                 name, type, points, schedule, reminder_time: reminderTime,
                 completed: false, from_calendar: 0
             });
-            this.saveData();
+            this.saveQuests();
             this.renderQuests();
             document.getElementById('newQuestName').value = '';
             document.getElementById('newQuestSchedule').value = '';
@@ -387,8 +387,6 @@
                 else alert('❌ Upload failed');
             } catch(e) { alert('Error uploading'); }
         },
-
-        saveAll() { this.saveData(); alert('💾 All changes saved!'); },
 
         renderPasskeyStatus() {
             const el = document.getElementById('passkeyStatus');
@@ -434,7 +432,6 @@
                 if (feedsRes.ok) {
                     const feedsData = await feedsRes.json();
                     feeds = feedsData.feeds || [];
-                    console.log('Calendar feeds loaded:', feeds);
                 }
 
                 if (feeds.length === 0) {
@@ -444,10 +441,8 @@
 
                 let allEvents = [];
                 for (const feed of feeds) {
-                    console.log(`Fetching feed: ${feed.name} (${feed.url})`);
                     try {
                         const events = await this.fetchCalendarEvents(feed.url);
-                        console.log(`Feed ${feed.name} returned ${events.length} events`);
                         allEvents.push(...events);
                     } catch (e) {
                         console.warn(`Failed to fetch feed ${feed.name}:`, e);
@@ -459,7 +454,6 @@
                     return;
                 }
 
-                // Remove duplicates and sort
                 const uniqueEvents = [];
                 const seen = new Set();
                 for (const ev of allEvents) {
@@ -497,14 +491,9 @@
             if (!calendarUrl) return [];
             try {
                 const proxyUrl = `api.php?action=ical_proxy&url=${encodeURIComponent(calendarUrl)}`;
-                console.log('Fetching iCal from proxy:', proxyUrl);
                 const response = await fetch(proxyUrl);
-                if (!response.ok) {
-                    console.error('Proxy responded with', response.status);
-                    return [];
-                }
+                if (!response.ok) return [];
                 const icalData = await response.text();
-                console.log('Received iCal data length:', icalData.length);
                 return this.parseICal(icalData);
             } catch(e) {
                 console.warn('Failed to fetch calendar:', e);
@@ -530,9 +519,7 @@
                     currentEvent = {};
                     eventCount++;
                 } else if (line === 'END:VEVENT' && currentEvent && currentEvent.summary) {
-                    // Debug log
                     const hasIcal = currentEvent.description && currentEvent.description.toLowerCase().includes('ical');
-                    console.log(`Event ${eventCount}: "${currentEvent.summary}" | description: "${currentEvent.description}" | hasICAL: ${hasIcal}`);
                     if (hasIcal) {
                         icalCount++;
                         events.push(currentEvent);
@@ -572,9 +559,6 @@
                 }
             }
 
-            console.log(`Total events: ${eventCount}, with ICAL flag: ${icalCount}`);
-
-            // Expand recurring events (weekly)
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const thirtyDaysLater = new Date(today);
@@ -585,13 +569,10 @@
                 if (!event.start) continue;
 
                 if (event.rrule && event.rrule.includes('FREQ=WEEKLY')) {
-                    // Weekly recurrence
                     let currentStart = new Date(event.start);
-                    const dayOfWeek = currentStart.getDay();
                     const endDate = event.end ? new Date(event.end) : new Date(currentStart);
                     const duration = endDate - currentStart;
 
-                    // Move to first occurrence on or after today
                     while (currentStart < today) {
                         currentStart.setDate(currentStart.getDate() + 7);
                     }
@@ -607,12 +588,10 @@
                         currentStart.setDate(currentStart.getDate() + 7);
                     }
                 } else {
-                    // Single event or yearly (simplified)
                     expandedEvents.push(event);
                 }
             }
 
-            // Filter events within next 30 days
             const upcomingEvents = [];
             for (const event of expandedEvents) {
                 const expiryDate = event.end ? event.end : event.start;
@@ -627,13 +606,10 @@
                 }
             }
 
-            // Sort by start date
             upcomingEvents.sort((a, b) => a.start - b.start);
-            console.log(`Upcoming events in next 30 days: ${upcomingEvents.length}`);
             return upcomingEvents;
         },
 
-        // Helper to parse iCal date string like "20260526T120000"
         parseICalDate(dateStr) {
             if (!dateStr.match(/^\d{8}(T\d{6})?$/)) return null;
             const year = parseInt(dateStr.substring(0, 4));
@@ -732,8 +708,12 @@
             if (newName) item.name = newName;
             const newCost = prompt('Edit point cost:', item.cost);
             if (newCost && !isNaN(newCost)) item.cost = parseInt(newCost);
-            this.saveData();
-            this.renderShopItems();
+            // Update on server
+            fetch('api.php?action=update_shop_item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id, name: item.name, cost: item.cost })
+            }).then(() => this.loadData().then(() => this.renderShopItems()));
         },
 
         removeShopItem(id) {
