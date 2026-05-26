@@ -6,21 +6,23 @@
     <meta name="theme-color" content="#1a1a1a">
     <title>Statistics - Quest Tracker</title>
     <!-- Chart.js for activity graph -->
+    <script>
+        (function() {
+            // Get saved theme or fallback to 'default'
+            var savedTheme = localStorage.getItem('active_theme') || 'default';
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.id = 'themeStylesheet';
+            var themeFile = (savedTheme === 'custom') ? 'custom-theme.css' : 'theme-' + savedTheme + '.css';
+            // Add cache-busting timestamp
+            link.href = 'css/' + themeFile + '?_=' + Date.now();
+            document.head.appendChild(link);
+        })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="theme-loader.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --jade: #4a7c59;
-            --jade-dark: #2d4a37;
-            --olive: #6b7d54;
-            --olive-light: #8a9968;
-            --dark-grey: #1a1a1a;
-            --dark-grey-2: #2a2a2a;
-            --dark-grey-3: #3a3a3a;
-            --cream: #e6d5b8;
-            --accent: #d4a574;
-            --success: #52b788;
-        }
         html, body { width: 100%; min-height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); }
         .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 2px solid var(--jade); padding-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }

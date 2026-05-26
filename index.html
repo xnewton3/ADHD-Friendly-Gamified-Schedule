@@ -9,24 +9,36 @@
     <meta name="apple-mobile-web-app-title" content="Quest Tracker">
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline';">
     <title>Quest Tracker</title>
-    <link rel="manifest" href="manifest.json?v=2">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <script>
+        (function() {
+            // Get saved theme or fallback to 'default'
+            var savedTheme = localStorage.getItem('active_theme') || 'default';
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.id = 'themeStylesheet';
+            var themeFile = (savedTheme === 'custom') ? 'custom-theme.css' : 'theme-' + savedTheme + '.css';
+            // Add cache-busting timestamp
+            link.href = 'css/' + themeFile + '?_=' + Date.now();
+            document.head.appendChild(link);
+        })();
+    </script>
+    <link rel="manifest" href="manifest.json?v=3">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <script src="theme-loader.js"></script>
+    <script>
+        // Force fresh CSS on every load
+        (function() {
+            const themeLink = document.getElementById('themeStylesheet');
+            if (themeLink) {
+                const currentHref = themeLink.getAttribute('href');
+                if (currentHref && !currentHref.includes('?_=')) {
+                    themeLink.href = currentHref + '?_=' + Date.now();
+                }
+            }
+        })();
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --jade: #4a7c59;
-            --jade-dark: #2d4a37;
-            --olive: #6b7d54;
-            --olive-light: #8a9968;
-            --dark-grey: #1a1a1a;
-            --dark-grey-2: #2a2a2a;
-            --dark-grey-3: #3a3a3a;
-            --cream: #e6d5b8;
-            --accent: #d4a574;
-            --success: #52b788;
-            --warning: #e8971f;
-            --error: #d62828;
-        }
         html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); overflow-x: hidden; }
         body { padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(5px, env(safe-area-inset-bottom)); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
         .notch-fix { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
@@ -50,7 +62,7 @@
         .header-actions { display: flex; gap: 0.75rem; align-items: center; }
         .header-actions button { padding: 0.4rem 0.8rem; font-size: 0.85rem; line-height: 1; height: 44px; min-width: 44px; }
         .reload-btn { background: var(--accent); color: var(--dark-grey); }
-        .missed-section { background: rgba(232,151,31,0.1); border-left: 4px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; border: 1px solid var(--warning); }
+        .missed-section { background: color-mix(in srgb, var(--warning) 10%, transparent); border-left: 4px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; border: 1px solid var(--warning); }
         .missed-section h3 { color: var(--warning); margin: 0 0 0.75rem 0; }
         .missed-quest { background: var(--dark-grey-3); padding: 0.75rem; border-radius: 4px; margin-bottom: 0.5rem; opacity: 0.7; border-left: 4px solid var(--warning); }
         .quest-section { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; margin-bottom: 1.5rem; }
@@ -61,7 +73,7 @@
         .quest-list { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
         .quest-list.hidden { display: none; }
         .quest-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--dark-grey-3); border-radius: 6px; border-left: 4px solid var(--olive); }
-        .quest-item.completed { background: rgba(82,183,136,0.1); border-left-color: var(--success); opacity: 0.6; }
+        .quest-item.completed { background: color-mix(in srgb, var(--success) 10%, transparent); border-left-color: var(--success); opacity: 0.6; }
         .quest-item.locked { opacity: 0.5; pointer-events: none; }
         .quest-checkbox { width: 24px; height: 24px; cursor: pointer; accent-color: var(--jade); flex-shrink: 0; }
         .quest-info { flex: 1; }
@@ -69,7 +81,7 @@
         .quest-item.completed .quest-name { text-decoration: line-through; color: var(--olive-light); }
         .quest-details { font-size: 0.75rem; color: var(--olive-light); margin: 0; }
         .quest-points { background: var(--jade); color: var(--dark-grey); padding: 0.25rem 0.75rem; border-radius: 12px; font-weight: 600; font-size: 0.875rem; white-space: nowrap; flex-shrink: 0; }
-        .lock-message { background: rgba(232,151,31,0.15); border: 1px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; text-align: center; color: var(--warning); }
+        .lock-message { background: color-mix(in srgb, var(--warning) 10%, transparent); border: 1px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; text-align: center; color: var(--warning); }
         .sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
         .sidebar-card { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1rem; }
         .sidebar-card.shop { padding: 0; }

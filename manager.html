@@ -5,24 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#1a1a1a">
     <title>Quest Manager</title>
+    <script>
+        (function() {
+            // Get saved theme or fallback to 'default'
+            var savedTheme = localStorage.getItem('active_theme') || 'default';
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.id = 'themeStylesheet';
+            var themeFile = (savedTheme === 'custom') ? 'custom-theme.css' : 'theme-' + savedTheme + '.css';
+            // Add cache-busting timestamp
+            link.href = 'css/' + themeFile + '?_=' + Date.now();
+            document.head.appendChild(link);
+        })();
+    </script>
     <script src="webauthn.js" data-cfasync="false"></script>
+    <script src="theme-loader.js"></script>
+    <script>
+        // Force fresh CSS on every load
+        (function() {
+            const themeLink = document.getElementById('themeStylesheet');
+            if (themeLink) {
+                const currentHref = themeLink.getAttribute('href');
+                if (currentHref && !currentHref.includes('?_=')) {
+                    themeLink.href = currentHref + '?_=' + Date.now();
+                }
+            }
+        })();
+    </script>
     <style>
         /* (Your existing styles - unchanged) */
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --jade: #4a7c59;
-            --jade-dark: #2d4a37;
-            --olive: #6b7d54;
-            --olive-light: #8a9968;
-            --dark-grey: #1a1a1a;
-            --dark-grey-2: #2a2a2a;
-            --dark-grey-3: #3a3a3a;
-            --cream: #e6d5b8;
-            --accent: #d4a574;
-            --success: #52b788;
-            --warning: #e8971f;
-            --error: #d62828;
-        }
         html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--dark-grey); color: var(--cream); padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
         .notch-fix { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
         .notch-fix-bottom { position: fixed; bottom: 0; left: 0; right: 0; height: env(safe-area-inset-bottom); background: var(--dark-grey); z-index: 9999; pointer-events: none; }
@@ -90,6 +102,35 @@
             font-size: 0.7rem;
             font-weight: 600;
         }
+
+        .theme-presets {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .theme-card {
+            background: var(--dark-grey-3);
+            border: 2px solid var(--dark-grey-3);
+            border-radius: 12px;
+            padding: 0.75rem;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .theme-card:hover { transform: translateY(-2px); }
+        .theme-card.active { border-color: var(--jade); background: var(--dark-grey-2); }
+        .theme-name { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85rem; }
+        .theme-colors { display: flex; gap: 0.25rem; justify-content: center; flex-wrap: wrap; }
+        .color-dot { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); }
+        .color-input-row { display: flex; align-items: center; gap: 0.5rem; }
+        .color-input-row label { width: 110px; font-size: 0.75rem; }
+        .color-input-row input { flex: 1; padding: 0.3rem; }
+        @media (max-width: 600px) {
+            .color-input-grid { grid-template-columns: 1fr; }
+            .color-input-row label { width: 100px; }
+        }
+
         @media (max-width: 1200px) { .quest-row { grid-template-columns: 40px 1fr 60px 40px 40px; } .quest-schedule, .quest-points-input, .quest-reminder { display: none; } }
         @media (max-width: 900px) { .quest-row { grid-template-columns: 40px 1fr 40px 40px; } .quest-type { display: none; } }
         @media (max-width: 600px) { .add-feed-form, .add-shop-form { flex-direction: column; } }
@@ -128,6 +169,35 @@
         <h2>🔐 Passkey / Security</h2>
         <div id="passkeyStatus" style="margin-bottom:1rem;font-size:0.9rem;color:var(--olive-light);"></div>
         <button class="danger" onclick="manager.resetPasskey()">🗑️ Remove Passkey</button>
+    </div>
+
+    <!-- Theme Manager Panel -->
+    <div class="settings-panel">
+        <h2>🎨 Theme Manager</h2>
+        <div class="theme-presets" id="themePresets"></div>
+
+        <div id="customThemeForm" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--dark-grey-3);">
+            <h3>🎨 Custom Theme</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:0.75rem;">
+                <div><label>Primary:</label><input type="color" id="customJade" value="#4a7c59"></div>
+                <div><label>Primary Dark:</label><input type="color" id="customJadeDark" value="#2d4a37"></div>
+                <div><label>Secondary:</label><input type="color" id="customOlive" value="#6b7d54"></div>
+                <div><label>Secondary Light:</label><input type="color" id="customOliveLight" value="#8a9968"></div>
+                <div><label>Background:</label><input type="color" id="customDarkGrey" value="#1a1a1a"></div>
+                <div><label>Surface:</label><input type="color" id="customDarkGrey2" value="#2a2a2a"></div>
+                <div><label>Border:</label><input type="color" id="customDarkGrey3" value="#3a3a3a"></div>
+                <div><label>Text:</label><input type="color" id="customCream" value="#e6d5b8"></div>
+                <div><label>Accent:</label><input type="color" id="customAccent" value="#d4a574"></div>
+                <div><label>Success:</label><input type="color" id="customSuccess" value="#52b788"></div>
+                <div><label>Warning:</label><input type="color" id="customWarning" value="#e8971f"></div>
+                <div><label>Error:</label><input type="color" id="customError" value="#d62828"></div>
+            </div>
+            <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+                <button id="applyCustomBtn">Apply Custom Theme</button>
+                <button id="saveCustomBtn" class="secondary">Save as Preset</button>
+            </div>
+        </div>
+        <div class="form-group-hint">💡 Themes sync across your devices.</div>
     </div>
 
     <div class="add-quest-section">
@@ -193,14 +263,35 @@
         calendarFeeds: [],
         draggedIndex: null,
         editingIndex: null,
+        currentTheme: 'default',      // <-- add this
+        themesData: null,              // <-- add this
 
         async init() {
+            // Load core data (user, quests, shop, feeds)
             await this.loadData();
+
+            // Load current theme from server
+            this.currentTheme = 'default';
+            try {
+                const res = await fetch('api.php?action=get_theme');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.currentTheme = data.activeTheme || 'default';
+                }
+            } catch(e) { console.warn('Could not load theme:', e); }
+
+            // Load theme presets and render theme selector
+            await this.loadThemes();
+
+            // Render all UI components
             this.renderQuests();
             this.renderPasskeyStatus();
             this.renderCalendarFeeds();
             await this.renderCalendarQuests();
             this.renderShopItems();
+
+            // Setup custom theme form handlers
+            this.setupCustomTheme();
         },
 
         async loadData() {
@@ -721,6 +812,126 @@
                 fetch(`api.php?action=delete_shop_item&id=${id}`, { method: 'DELETE' })
                     .then(() => this.loadData().then(() => this.renderShopItems()));
             }
+        },
+
+        // --- Theme methods ---
+        async loadThemes() {
+            console.log('loadThemes() called');
+            try {
+                const res = await fetch('data/themes.json?_=' + Date.now());
+                console.log('fetch response status:', res.status);
+                if (res.ok) {
+                    this.themesData = await res.json();
+                    console.log('themesData loaded:', this.themesData);
+                    this.renderThemePresets();
+                } else {
+                    console.error('Failed to load themes.json:', res.status);
+                }
+            } catch(e) {
+                console.error('Error loading themes:', e);
+            }
+        },
+
+        renderThemePresets() {
+            const container = document.getElementById('themePresets');
+            if (!container || !this.themesData) return;
+            const current = this.currentTheme || 'default';
+            container.innerHTML = '';
+            for (const t of this.themesData.themes) {
+                const card = document.createElement('div');
+                card.className = `theme-card ${current === t.id ? 'active' : ''}`;
+                card.innerHTML = `<div class="theme-name">${t.name}</div><div class="theme-colors"><div class="color-dot" style="background: var(--jade);"></div></div>`;
+                card.onclick = () => this.applyTheme(t.id);
+                container.appendChild(card);
+            }
+            const customCard = document.createElement('div');
+            customCard.className = `theme-card ${current === 'custom' ? 'active' : ''}`;
+            customCard.innerHTML = `<div class="theme-name">🎨 Custom</div><div class="theme-colors"><div class="color-dot" style="background: var(--accent);"></div></div>`;
+            customCard.onclick = () => {
+                document.getElementById('customThemeForm').style.display = 'block';
+                this.currentTheme = 'custom';
+                this.renderThemePresets();
+            };
+            container.appendChild(customCard);
+        },
+
+        async applyTheme(themeId) {
+            await fetch('api.php?action=set_theme', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme: themeId })
+            });
+            this.currentTheme = themeId;
+            const link = document.getElementById('themeStylesheet');
+            if (link) {
+                const url = themeId === 'custom' ? 'css/custom-theme.css' : `css/theme-${themeId}.css`;
+                link.href = url + '?_=' + Date.now();
+            }
+            this.renderThemePresets();
+            document.getElementById('customThemeForm').style.display = 'none';
+        },
+
+        setupCustomTheme() {
+            document.getElementById('applyCustomBtn')?.addEventListener('click', async () => {
+                const colors = {
+                    '--jade': document.getElementById('customJade').value,
+                    '--jade-dark': document.getElementById('customJadeDark').value,
+                    '--olive': document.getElementById('customOlive').value,
+                    '--olive-light': document.getElementById('customOliveLight').value,
+                    '--dark-grey': document.getElementById('customDarkGrey').value,
+                    '--dark-grey-2': document.getElementById('customDarkGrey2').value,
+                    '--dark-grey-3': document.getElementById('customDarkGrey3').value,
+                    '--cream': document.getElementById('customCream').value,
+                    '--accent': document.getElementById('customAccent').value,
+                    '--success': document.getElementById('customSuccess').value,
+                    '--warning': document.getElementById('customWarning').value,
+                    '--error': document.getElementById('customError').value
+                };
+                if (await ThemeLoader.saveCustomTheme(colors)) {
+                    await this.applyTheme('custom');
+                    alert('✅ Custom theme applied');
+                } else alert('❌ Failed');
+            });
+
+            document.getElementById('saveCustomBtn')?.addEventListener('click', async () => {
+                const name = prompt('Theme name:', 'My Custom Theme');
+                if (!name) return;
+
+                const colors = {
+                    '--jade': document.getElementById('customJade').value,
+                    '--jade-dark': document.getElementById('customJadeDark').value,
+                    '--olive': document.getElementById('customOlive').value,
+                    '--olive-light': document.getElementById('customOliveLight').value,
+                    '--dark-grey': document.getElementById('customDarkGrey').value,
+                    '--dark-grey-2': document.getElementById('customDarkGrey2').value,
+                    '--dark-grey-3': document.getElementById('customDarkGrey3').value,
+                    '--cream': document.getElementById('customCream').value,
+                    '--accent': document.getElementById('customAccent').value,
+                    '--success': document.getElementById('customSuccess').value,
+                    '--warning': document.getElementById('customWarning').value,
+                    '--error': document.getElementById('customError').value
+                };
+
+                try {
+                    const res = await fetch('api.php?action=save_theme_preset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: name, colors: colors })
+                    });
+                    if (res.ok) {
+                        alert(`✅ Theme "${name}" saved!`);
+                        await this.loadThemes();  // reload the preset list
+                        // Optionally switch to the new theme
+                        const data = await res.json();
+                        if (data.id) await this.applyTheme(data.id);
+                    } else {
+                        alert('❌ Failed to save theme');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert('❌ Error saving theme');
+                }
+            });
         }
     };
 

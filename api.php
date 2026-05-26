@@ -1002,6 +1002,96 @@ if ($method === 'PUT' && $action === 'calendar_quests') {
     exit;
 }
 
+// ============ THEME MANAGEMENT ============
+
+// GET get themes
+if ($method === 'GET' && $action === 'get_theme') {
+    $file = DATA_DIR . '/themes.json';
+    if (file_exists($file)) {
+        $data = json_decode(file_get_contents($file), true);
+        echo json_encode(['activeTheme' => $data['activeTheme'] ?? 'default']);
+    } else {
+        echo json_encode(['activeTheme' => 'default']);
+    }
+    exit;
+}
+
+// POST set theme
+if ($method === 'POST' && $action === 'set_theme') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $themeId = $input['theme'] ?? 'default';
+    $file = DATA_DIR . '/themes.json';
+    $themes = file_exists($file) ? json_decode(file_get_contents($file), true) : ['themes' => [], 'activeTheme' => 'default'];
+    $themes['activeTheme'] = $themeId;
+    file_put_contents($file, json_encode($themes, JSON_PRETTY_PRINT));
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// POST save new custom theme
+if ($method === 'POST' && $action === 'save_custom_theme') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $colors = $input['colors'] ?? [];
+    $css = ":root {\n";
+    foreach ($colors as $var => $val) {
+        $css .= "    $var: $val;\n";
+    }
+    $css .= "}\n";
+    $cssDir = __DIR__ . '/css';
+    if (!is_dir($cssDir)) mkdir($cssDir, 0755, true);
+    file_put_contents($cssDir . '/custom-theme.css', $css);
+
+    $file = DATA_DIR . '/themes.json';
+    $themes = file_exists($file) ? json_decode(file_get_contents($file), true) : ['themes' => [], 'activeTheme' => 'default'];
+    $themes['activeTheme'] = 'custom';
+    $themes['customTheme'] = $colors;
+    file_put_contents($file, json_encode($themes, JSON_PRETTY_PRINT));
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// POST save a new theme preset
+if ($method === 'POST' && $action === 'save_theme_preset') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $presetName = $input['name'] ?? 'My Theme';
+    $colors = $input['colors'] ?? [];
+
+    // Generate a unique ID and filename
+    $id = 'preset_' . time();
+    $fileName = 'theme-' . $id . '.css';
+    $filePath = __DIR__ . '/css/' . $fileName;
+
+    // Build the CSS content
+    $css = ":root {\n";
+    foreach ($colors as $var => $val) {
+        $css .= "    $var: $val;\n";
+    }
+    $css .= "}\n";
+
+    // Ensure css directory exists
+    $cssDir = __DIR__ . '/css';
+    if (!is_dir($cssDir)) mkdir($cssDir, 0755, true);
+
+    // Write the CSS file
+    file_put_contents($filePath, $css);
+
+    // Load existing themes.json
+    $themesFile = DATA_DIR . '/themes.json';
+    $themes = file_exists($themesFile) ? json_decode(file_get_contents($themesFile), true) : ['themes' => [], 'activeTheme' => 'default'];
+
+    // Add new preset
+    $themes['themes'][] = [
+        'id' => $id,
+        'name' => $presetName,
+        'file' => 'css/' . $fileName,
+        'isDefault' => false
+    ];
+    file_put_contents($themesFile, json_encode($themes, JSON_PRETTY_PRINT));
+
+    echo json_encode(['ok' => true, 'id' => $id]);
+    exit;
+}
+
 // ============ FALLBACK ============
 
 // If we get here, return error
