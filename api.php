@@ -948,7 +948,7 @@ if ($method === 'GET' && $action === 'calendar_quests') {
     exit;
 }
 
-// PUT calendar quests – UPSERT (update existing, insert new, delete missing)
+// PUT calendar quests – UPSERT only (never delete)
 if ($method === 'PUT' && $action === 'calendar_quests') {
     $data = json_decode(file_get_contents('php://input'), true);
     $quests = $data['quests'] ?? [];
@@ -956,45 +956,22 @@ if ($method === 'PUT' && $action === 'calendar_quests') {
     $db = get_db();
     $db->exec("BEGIN TRANSACTION");
 
-    // Fetch existing calendar quest IDs for this user
-    $existingStmt = $db->prepare("SELECT id FROM quests WHERE user_id = :user AND type = 'calendar'");
-    $existingStmt->bindValue(':user', $userId, SQLITE3_TEXT);
-    $existingResult = $existingStmt->execute();
-    $existingIds = [];
-    while ($row = $existingResult->fetchArray(SQLITE3_ASSOC)) {
-        $existingIds[$row['id']] = true;
-    }
-
-    $insert = $db->prepare("INSERT OR REPLACE INTO quests (id, user_id, name, type, points, reminder_time, expires, created_at)
+    $stmt = $db->prepare("INSERT OR REPLACE INTO quests (id, user_id, name, type, points, reminder_time, expires, created_at)
         VALUES (:id, :user, :name, 'calendar', :points, :reminder, :expires, :created)");
 
-    $newIds = [];
     foreach ($quests as $quest) {
-        $insert->bindValue(':id', $quest['id'], SQLITE3_TEXT);
-        $insert->bindValue(':user', $userId, SQLITE3_TEXT);
-        $insert->bindValue(':name', $quest['name'], SQLITE3_TEXT);
-        $insert->bindValue(':points', $quest['points'] ?? 1, SQLITE3_INTEGER);
-        $insert->bindValue(':reminder', $quest['reminder_time'] ?? null, SQLITE3_TEXT);
-        $insert->bindValue(':expires', $quest['expires'], SQLITE3_TEXT);
-        $insert->bindValue(':created', $quest['created_at'] ?? date('Y-m-d H:i:s'), SQLITE3_TEXT);
-        $insert->execute();
-        $newIds[$quest['id']] = true;
+        $stmt->bindValue(':id', $quest['id'], SQLITE3_TEXT);
+        $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
+        $stmt->bindValue(':name', $quest['name'], SQLITE3_TEXT);
+        $stmt->bindValue(':points', $quest['points'] ?? 1, SQLITE3_INTEGER);
+        $stmt->bindValue(':reminder', $quest['reminder_time'] ?? null, SQLITE3_TEXT);
+        $stmt->bindValue(':expires', $quest['expires'], SQLITE3_TEXT);
+        $stmt->bindValue(':created', $quest['created_at'] ?? date('Y-m-d H:i:s'), SQLITE3_TEXT);
+        $stmt->execute();
     }
 
-    // Delete calendar quests that are no longer present in the feed
-    foreach ($existingIds as $id => $_) {
-        if (!isset($newIds[$id])) {
-            $delete = $db->prepare("DELETE FROM quests WHERE id = :id AND user_id = :user");
-            $delete->bindValue(':id', $id, SQLITE3_TEXT);
-            $delete->bindValue(':user', $userId, SQLITE3_TEXT);
-            $delete->execute();
-            // Also remove orphaned completions
-            $delComp = $db->prepare("DELETE FROM quest_completions WHERE quest_id = :id AND user_id = :user");
-            $delComp->bindValue(':id', $id, SQLITE3_TEXT);
-            $delComp->bindValue(':user', $userId, SQLITE3_TEXT);
-            $delComp->execute();
-        }
-    }
+    // ❌ REMOVED the deletion of old calendar quests
+    // Calendar quests are only removed when they expire (handled by daily reset)
 
     $db->exec("COMMIT");
     $db->close();

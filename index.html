@@ -368,16 +368,30 @@
             this.saveData();
         },
 
-        checkDailyReset() {
-            const today = new Date().toDateString();
-            if (this.userData.lastReset !== today) {
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayStr = yesterday.toDateString();
+        async checkDailyReset() {
+            const today = new Date();
+            const todayStr = today.toDateString();
 
-                // 1. Remove expired calendar quests (expires < today)
+            if (this.userData.lastReset !== todayStr) {
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayStr = yesterday.toISOString().slice(0, 10); // YYYY-MM-DD
+
+                // Load yesterday's completions from the database
+                let yesterdayCompletions = {};
+                try {
+                    const res = await fetch(`api.php?action=completions&date=${yesterdayStr}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        yesterdayCompletions = data.completions || {};
+                    }
+                } catch(e) {
+                    console.warn('Could not load yesterday\'s completions:', e);
+                }
+
+                // 1. Remove expired calendar quests
                 this.quests = this.quests.filter(quest => {
-                    if (quest.type === 'calendar' && new Date(quest.expires) < new Date(today)) {
+                    if (quest.type === 'calendar' && new Date(quest.expires) < today) {
                         console.log(`🗑️ Removing expired calendar quest: ${quest.name}`);
                         return false;
                     }
@@ -398,20 +412,19 @@
                         continue;
                     }
 
-                    // Mark missed ONLY if:
-                    // - quest was visible yesterday
-                    // - not completed yesterday
-                    // - not already marked missed
+                    // Check visibility and completion for yesterday
                     const wasVisible = this.wasVisibleYesterday(quest);
-                    if (wasVisible && !quest.completed && !quest.missed) {
-                        quest.missed = true;
-                        quest.missedDate = yesterdayStr;
-                        console.log(`⚠️ Marked as missed: ${quest.name}`);
-                    } else if (quest.completed) {
-                        // Completed quests should never be missed
-                        quest.missed = false;
-                    } else if (!wasVisible) {
-                        // If it wasn't visible yesterday, ensure missed is false
+                    const completedYesterday = yesterdayCompletions[quest.id]?.completed === true;
+
+                    if (wasVisible && !completedYesterday) {
+                        // Visible yesterday but NOT completed → missed
+                        if (!quest.missed) {
+                            quest.missed = true;
+                            quest.missedDate = yesterday.toDateString();
+                            console.log(`⚠️ Marked as missed: ${quest.name}`);
+                        }
+                    } else {
+                        // Either not visible or completed → not missed
                         quest.missed = false;
                     }
 
@@ -419,11 +432,16 @@
                 }
 
                 this.quests = keepQuests;
-                this.userData.lastReset = today;
+                this.userData.lastReset = todayStr;
                 this.saveData();
+
+                // Award bonus points for missed quests
                 this.addBonusPointsForMissed();
+
+                // Sync calendar feeds and reload today's completions
                 this.syncCalendarFeeds();
-                this.loadCompletions();
+                await this.loadCompletions();
+                this.render();
             }
         },
 
@@ -619,6 +637,19 @@
             } catch(e) {
                 console.error('Could not load completions:', e);
             }
+        },
+
+        async loadCompletionsForDate(date) {
+            try {
+                const res = await fetch(`api.php?action=completions&date=${date}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    return data.completions || {};
+                }
+            } catch(e) {
+                console.warn(`Could not load completions for ${date}:`, e);
+            }
+            return {};
         },
 
         async checkPasskeyRegistration() {
@@ -851,32 +882,43 @@
             yesterday.setDate(yesterday.getDate() - 1);
             yesterday.setHours(0, 0, 0, 0);
 
+            // Calendar quests: visible if expiry equals yesterday
             if (quest.type === 'calendar') {
                 const expiryDate = new Date(quest.expires);
                 expiryDate.setHours(0, 0, 0, 0);
                 return expiryDate.getTime() === yesterday.getTime();
             }
 
+            // Specific dates match (with custom date = yesterday)
             if (this.isSpecificDateMatch(quest, yesterday)) return true;
+
+            // Date pattern in schedule (e.g., "03/08/&&&&")
             if (quest.schedule && quest.schedule.includes('/')) {
                 const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
                 if (looksLikeDate) {
                     return this.matchesDatePattern(quest.schedule, yesterday);
                 }
             }
+
+            // Bi-weekly (every other week)
             if (this.isBiWeeklyMatch(quest, yesterday)) return true;
+
+            // Nth weekday (e.g., "2nd & 4th Saturday")
             if (this.isNthWeekdayMatch(quest, yesterday)) return true;
-            if (quest.days_visible !== null && quest.days_visible !== undefined) {
-                let daysVisible = quest.days_visible;
-                if (typeof daysVisible === 'string') {
-                    try { daysVisible = JSON.parse(daysVisible); } catch(e) { daysVisible = []; }
-                }
-                if (Array.isArray(daysVisible) && daysVisible.length > 0) {
-                    const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
-                    return daysVisible.includes(yesterdayName);
-                }
+
+            // "Every weekend"
+            if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
+                const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
+                return (yesterdayName === 'Saturday' || yesterdayName === 'Sunday');
             }
 
+            // Days visible array
+            if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length > 0) {
+                const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
+                return quest.days_visible.includes(yesterdayName);
+            }
+
+            // Single weekday name in schedule (e.g., "Monday")
             if (quest.schedule) {
                 const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
                 const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
@@ -886,6 +928,13 @@
                 }
             }
 
+            // If no schedule restrictions, it was visible yesterday (Daily quests)
+            // But only if it's not a complex schedule that didn't match above
+            if (!quest.schedule || quest.schedule === 'Daily') {
+                return true;
+            }
+
+            // Complex schedule that didn't match → not visible
             return false;
         },
 
@@ -893,64 +942,65 @@
             const calendarFeeds = this.calendarFeeds || [];
             if (calendarFeeds.length === 0) return;
 
-            const existingCalendarQuests = this.quests.filter(q => q.type === 'calendar');
+            // Get existing calendar quests as a Map by ID for quick lookup
             const existingMap = new Map();
-            existingCalendarQuests.forEach(q => {
-                existingMap.set(q.id, q);
+            this.quests.forEach(q => {
+                if (q.type === 'calendar') existingMap.set(q.id, q);
             });
 
-            const completionMap = new Map();
-            existingCalendarQuests.forEach(q => {
-                const key = `${q.name}_${q.expires}`;
-                completionMap.set(key, q.completed);
-            });
-
-            const updatedEvents = [];
+            // Fetch new events from all feeds
+            const allEvents = [];
             for (const feed of calendarFeeds) {
                 try {
                     const events = await this.fetchCalendarEvents(feed.url);
-                    for (const event of events) {
-                        const startDateStr = event.start.toDateString();
-                        const questName = `📅 ${event.summary || 'Calendar Event'}`;
-                        const stableId = `cal_${this.hashCode(`${questName}_${startDateStr}_${event.end ? event.end.toDateString() : startDateStr}`)}`;
-                        const key = `${questName}_${startDateStr}`;
-
-                        const existing = existingMap.get(stableId);
-                        if (!existing) {
-                            updatedEvents.push({
-                                id: stableId,
-                                name: questName,
-                                type: 'calendar',
-                                points: 1,
-                                completed: completionMap.get(key) || false,
-                                reminder_time: event.start ? this.formatTime12hr(event.start) : null,
-                                expires: startDateStr,
-                                created_at: new Date().toISOString()
-                            });
-                        } else {
-                            existing.reminder_time = event.start ? this.formatTime12hr(event.start) : null;
-                            existing.expires = startDateStr;
-                            updatedEvents.push(existing);
-                        }
-                    }
+                    allEvents.push(...events);
                 } catch(e) {
                     console.warn('Failed to fetch calendar:', feed.url, e);
                 }
             }
 
-            const unique = [];
-            const seenIds = new Set();
-            for (const ev of updatedEvents) {
-                if (!seenIds.has(ev.id)) {
-                    seenIds.add(ev.id);
-                    unique.push(ev);
+            // Process each event: update existing quest or create new one
+            const updatedCalendarQuests = [];
+            for (const event of allEvents) {
+                const startDateStr = event.start.toDateString();
+                const questName = `📅 ${event.summary || 'Calendar Event'}`;
+                const stableId = `cal_${this.hashCode(`${questName}_${startDateStr}_${event.end ? event.end.toDateString() : startDateStr}`)}`;
+
+                const existing = existingMap.get(stableId);
+                if (existing) {
+                    // Update only mutable fields, keep the object (and its 'completed' flag)
+                    existing.reminder_time = event.start ? this.formatTime12hr(event.start) : null;
+                    existing.expires = startDateStr;
+                    updatedCalendarQuests.push(existing);
+                } else {
+                    // Create new quest object (completed = false by default)
+                    const newQuest = {
+                        id: stableId,
+                        name: questName,
+                        type: 'calendar',
+                        points: 1,
+                        completed: false,
+                        reminder_time: event.start ? this.formatTime12hr(event.start) : null,
+                        expires: startDateStr,
+                        created_at: new Date().toISOString()
+                    };
+                    updatedCalendarQuests.push(newQuest);
                 }
             }
 
-            await this.saveCalendarQuests(unique);
+            // Remove duplicate IDs (just in case)
+            const uniqueMap = new Map();
+            for (const q of updatedCalendarQuests) {
+                uniqueMap.set(q.id, q);
+            }
+            const unique = Array.from(uniqueMap.values());
 
+            // Merge with non-calendar quests
             const regularQuests = this.quests.filter(q => q.type !== 'calendar');
             this.quests = [...regularQuests, ...unique];
+
+            // Re-apply today's completions to ensure checkmarks are correct
+            await this.loadCompletions();
             this.render();
         },
 
