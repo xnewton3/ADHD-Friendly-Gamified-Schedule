@@ -1,0 +1,14 @@
+:root {
+    --jade: #5c6bc0;
+    --jade-dark: #3d4a8c;
+    --olive: #6c5ce7;
+    --olive-light: #8a7cdf;
+    --dark-grey: #0a0a14;
+    --dark-grey-2: #141424;
+    --dark-grey-3: #222236;
+    --cream: #e8eaf6;
+    --accent: #ff8a65;
+    --success: #66bb6a;
+    --warning: #ffb74d;
+    --error: #f44336;
+}
