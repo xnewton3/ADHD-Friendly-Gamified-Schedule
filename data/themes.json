@@ -1,0 +1,36 @@
+{
+  "themes": [
+    {
+      "id": "default",
+      "name": "🌿 Forest",
+      "file": "css/theme-forest.css",
+      "isDefault": true
+    },
+    {
+      "id": "ocean",
+      "name": "🌊 Ocean",
+      "file": "css/theme-ocean.css",
+      "isDefault": false
+    },
+    {
+      "id": "sunset",
+      "name": "🌅 Sunset",
+      "file": "css/theme-sunset.css",
+      "isDefault": false
+    },
+    {
+      "id": "midnight",
+      "name": "🌙 Midnight",
+      "file": "css/theme-midnight.css",
+      "isDefault": false
+    },
+    {
+      "id": "coffee",
+      "name": "☕ Coffee",
+      "file": "css/theme-coffee.css",
+      "isDefault": false
+    }
+  ],
+  "activeTheme": "default",
+  "customTheme": null
+}
