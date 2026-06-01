@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#1a1a1a">
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline';">
     <title>Achievements - Quest Tracker</title>
+    <link rel="manifest" href="manifest.json?v=5">
     <script>
         (function() {
             // Get saved theme or fallback to 'default'
@@ -33,7 +34,7 @@
         .stat-card .label { font-size: 0.7rem; color: var(--olive-light); text-transform: uppercase; }
         .achievement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
         .achievement-card { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; border: 1px solid var(--dark-grey-3); transition: all 0.3s; }
-        .achievement-card.earned { border-left: 4px solid var(--gold); background: linear-gradient(135deg, var(--dark-grey-2), rgba(74,124,89,0.1)); }
+        .achievement-card.earned { border-left: 4px solid var(--gold); background: linear-gradient(135deg, var(--dark-grey-2), var(--success)); }
         .achievement-card.locked { opacity: 0.5; filter: blur(2px); }
         .achievement-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
         .achievement-name { font-weight: 700; color: var(--cream); margin-bottom: 0.25rem; }
@@ -44,13 +45,24 @@
         .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
         .category-tab { background: var(--dark-grey-3); padding: 0.5rem 1rem; border-radius: 20px; cursor: pointer; transition: all 0.3s; }
         .category-tab.active { background: var(--jade); color: var(--dark-grey); }
+        .nav-button, .reload-btn {
+            background: var(--dark-grey-3);
+            color: var(--cream);
+            border: 1px solid var(--olive);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
         @media (max-width: 600px) { .achievement-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
 <div class="container">
-    <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Quests</button></div>
-    <div class="header"><h1>🏆 Achievements</h1><button onclick="location.reload()">🔄</button></div>
+    <div class="nav-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <button onclick="window.location.href='index.html'" class="nav-button">← Back to Quests</button>
+        <button onclick="location.reload()" class="reload-btn">🔄 Refresh</button>
+    </div>
+    <div class="header"><h1>🏆 Achievements</h1></div>
 
     <div class="stats-summary" id="statsSummary">Loading...</div>
 

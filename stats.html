@@ -5,21 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#1a1a1a">
     <title>Statistics - Quest Tracker</title>
-    <!-- Chart.js for activity graph -->
+    <link rel="manifest" href="manifest.json?v=5">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         (function() {
-            // Get saved theme or fallback to 'default'
             var savedTheme = localStorage.getItem('active_theme') || 'default';
             var link = document.createElement('link');
             link.rel = 'stylesheet';
             link.id = 'themeStylesheet';
             var themeFile = (savedTheme === 'custom') ? 'custom-theme.css' : 'theme-' + savedTheme + '.css';
-            // Add cache-busting timestamp
             link.href = 'css/' + themeFile + '?_=' + Date.now();
             document.head.appendChild(link);
         })();
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="theme-loader.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -27,7 +25,7 @@
         .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 2px solid var(--jade); padding-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
         .header h1 { color: var(--jade); font-size: 2rem; }
-        .nav-back button, .reload-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+        .nav-back button, .reload-btn, .logout-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { background: var(--dark-grey-2); padding: 1rem; border-radius: 12px; text-align: center; border-left: 4px solid var(--jade); }
         .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
@@ -59,7 +57,10 @@
     <div class="header" id="statsHeader" style="display: none;">
         <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Login</button></div>
         <div><h1>📊 Statistics</h1></div>
-        <div><button class="reload-btn" onclick="location.reload()">🔄 Refresh</button></div>
+        <div>
+            <button class="reload-btn" onclick="location.reload()">🔄 Refresh</button>
+            <button class="logout-btn" onclick="stats.logout()">🚪 Logout</button>
+        </div>
     </div>
 
     <div id="loginSection" class="login-box">
@@ -84,83 +85,142 @@
 
 <script>
     const stats = {
-        accessCode: 'your-new-code',
+        accessCode: null,
         chart: null,
+        historyData: [],
+        loginExpiryDays: 30,
 
-        async checkAccess() {
+        // Normalize any date string to YYYY-MM-DD
+        normalizeDate(dateStr) {
+            if (!dateStr) return null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+            const parsed = new Date(dateStr);
+            if (!isNaN(parsed.getTime())) {
+                return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`;
+            }
+            return dateStr;
+        },
+
+        ymd(date) {
+            return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+        },
+
+        getCSSColor(varName) {
+            return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || '#4a7c59';
+        },
+
+        // Check if user has a valid saved login (timestamp in localStorage)
+        hasValidLogin() {
+            const saved = localStorage.getItem('stats_authenticated');
+            if (!saved) return false;
+            try {
+                const data = JSON.parse(saved);
+                const expiry = data.timestamp + (this.loginExpiryDays * 24 * 60 * 60 * 1000);
+                return Date.now() < expiry;
+            } catch(e) {
+                return false;
+            }
+        },
+
+        // Save login flag with current timestamp
+        saveLogin() {
+            localStorage.setItem('stats_authenticated', JSON.stringify({
+                timestamp: Date.now()
+            }));
+        },
+
+        // Clear saved login (logout)
+        clearLogin() {
+            localStorage.removeItem('stats_authenticated');
+        },
+
+        async fetchAccessCode() {
+            try {
+                const res = await fetch('api.php?action=stats_access_code');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                this.accessCode = data.code;
+                return true;
+            } catch(e) {
+                console.error(e);
+                document.getElementById('loginError').innerHTML = '❌ Could not load access code. Try again.';
+                return false;
+            }
+        },
+
+        async checkAccess(bypassCache = false) {
+            if (!bypassCache && this.hasValidLogin()) {
+                // Already logged in, just show stats
+                await this.showStatsSection();
+                return;
+            }
+            if (this.accessCode === null) {
+                const ok = await this.fetchAccessCode();
+                if (!ok) return;
+            }
             const code = document.getElementById('accessCode').value;
             if (code === this.accessCode) {
-                document.getElementById('loginSection').classList.add('hidden');
-                document.getElementById('statsSection').classList.remove('hidden');
-                document.getElementById('statsHeader').style.display = 'flex';
-                await this.loadStats();
+                this.saveLogin();
+                await this.showStatsSection();
             } else {
                 document.getElementById('loginError').innerHTML = '❌ Incorrect access code';
             }
         },
 
+        async showStatsSection() {
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('statsSection').classList.remove('hidden');
+            document.getElementById('statsHeader').style.display = 'flex';
+            await this.loadStats();
+        },
+
+        logout() {
+            this.clearLogin();
+            // Reload page to reset to login screen
+            location.reload();
+        },
+
         async loadStats() {
             try {
                 const res = await fetch('api.php?action=history');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                const history = data.history || [];
+                this.historyData = data.history || [];
+                this.historyData.forEach(h => { h.date = this.normalizeDate(h.date); });
+                console.log(`Loaded ${this.historyData.length} entries`);
 
-                // Compute stats
-                const statsData = this.computeStats(history);
+                const statsData = this.computeStats(this.historyData);
                 this.renderStats(statsData);
-                this.renderActivityGraph(history);
-                this.renderRecentActivity(history);
+                this.renderActivityGraph(this.historyData);
+                this.renderRecentActivity(this.historyData);
             } catch(e) {
-                console.error('Failed to load stats:', e);
+                console.error(e);
                 document.getElementById('statsGrid').innerHTML = '<div class="error">❌ Failed to load statistics</div>';
             }
         },
 
         computeStats(history) {
-            // Total points earned (positive only)
-            const totalEarned = history.filter(h => h.points > 0).reduce((sum, h) => sum + h.points, 0);
-            // Current points (net sum)
-            const currentPoints = history.reduce((sum, h) => sum + h.points, 0);
-            // Today's points
-            const today = new Date().toDateString();
-            const todayPoints = history.filter(h => h.date === today && h.points > 0).reduce((sum, h) => sum + h.points, 0);
-            // Total rewards redeemed
+            const totalEarned = history.filter(h => h.points > 0).reduce((s, h) => s + h.points, 0);
+            const currentPoints = history.reduce((s, h) => s + h.points, 0);
+            const todayStr = this.ymd(new Date());
+            const todayPoints = history.filter(h => h.date === todayStr && h.points > 0).reduce((s, h) => s + h.points, 0);
             const totalRewards = history.filter(h => h.type === 'reward_redeem').length;
-            // Latest reward
             const latestReward = history.filter(h => h.type === 'reward_redeem').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-            // Active days (unique dates with any completion)
             const activeDays = new Set(history.filter(h => h.type === 'quest_complete').map(h => h.date)).size;
-            // Streak (consecutive days with at least one completion)
             const streak = this.calculateStreak(history);
-
-            return {
-                totalEarned,
-                currentPoints,
-                todayPoints,
-                totalRewards,
-                latestReward,
-                activeDays,
-                streak
-            };
+            return { totalEarned, currentPoints, todayPoints, totalRewards, latestReward, activeDays, streak };
         },
 
         calculateStreak(history) {
-            // Get unique dates with at least one quest completion
-            const completionDates = [...new Set(history.filter(h => h.type === 'quest_complete').map(h => h.date))];
-            if (completionDates.length === 0) return 0;
-            // Sort descending
-            completionDates.sort((a,b) => new Date(b) - new Date(a));
-            let streak = 1;
-            let current = new Date(completionDates[0]);
-            for (let i = 1; i < completionDates.length; i++) {
-                const prev = new Date(completionDates[i]);
-                const diffDays = (current - prev) / (1000 * 60 * 60 * 24);
-                if (diffDays === 1) {
-                    streak++;
-                    current = prev;
-                } else {
-                    break;
-                }
+            const dates = [...new Set(history.filter(h => h.type === 'quest_complete').map(h => h.date))];
+            if (!dates.length) return 0;
+            dates.sort().reverse();
+            let streak = 1, current = new Date(dates[0]);
+            for (let i = 1; i < dates.length; i++) {
+                const prev = new Date(dates[i]);
+                const diff = (current - prev) / (1000*60*60*24);
+                if (diff === 1) { streak++; current = prev; }
+                else break;
             }
             return streak;
         },
@@ -169,7 +229,6 @@
             const latestRewardText = stats.latestReward ?
                 `${stats.latestReward.description.split('Redeemed ')[1] || 'Reward'} on ${new Date(stats.latestReward.date).toDateString()}` :
                 'None yet';
-
             document.getElementById('statsGrid').innerHTML = `
                 <div class="stat-card"><div class="stat-value">${stats.activeDays}</div><div class="stat-label">Days Active</div></div>
                 <div class="stat-card"><div class="stat-value">${stats.streak}</div><div class="stat-label">Current Streak</div></div>
@@ -181,35 +240,40 @@
         },
 
         renderActivityGraph(history) {
-            // Group points by date (last 30 days)
             const pointsByDate = new Map();
             const today = new Date();
             for (let i = 0; i < 30; i++) {
-                const date = new Date(today);
-                date.setDate(today.getDate() - i);
-                const dateStr = date.toDateString();
-                pointsByDate.set(dateStr, 0);
+                const d = new Date(today);
+                d.setDate(today.getDate() - i);
+                const key = this.ymd(d);
+                pointsByDate.set(key, 0);
             }
             history.forEach(h => {
                 if (h.points > 0 && pointsByDate.has(h.date)) {
                     pointsByDate.set(h.date, pointsByDate.get(h.date) + h.points);
                 }
             });
-            // Convert to arrays for chart (reverse so oldest first)
+
             const labels = Array.from(pointsByDate.keys()).reverse();
             const dataPoints = Array.from(pointsByDate.values()).reverse();
 
             const ctx = document.getElementById('activityChart').getContext('2d');
             if (this.chart) this.chart.destroy();
+
+            const barColor = this.getCSSColor('--success') || '#52b788';
+            const borderColor = this.getCSSColor('--jade') || '#4a7c59';
+            const textColor = this.getCSSColor('--olive-light') || '#8a9968';
+            const gridColor = this.getCSSColor('--dark-grey-3') || '#3a3a3a';
+
             this.chart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: labels.map(d => d.slice(0, 10)), // short date
+                    labels: labels.map(d => d.slice(5)),
                     datasets: [{
                         label: 'Points Earned',
                         data: dataPoints,
-                        backgroundColor: 'rgba(74, 124, 89, 0.7)',
-                        borderColor: '#4a7c59',
+                        backgroundColor: barColor,
+                        borderColor: borderColor,
                         borderWidth: 1,
                         borderRadius: 4
                     }]
@@ -218,12 +282,12 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: {
-                        legend: { labels: { color: '#e6d5b8' } },
+                        legend: { labels: { color: textColor } },
                         tooltip: { callbacks: { label: (ctx) => `${ctx.raw} points` } }
                     },
                     scales: {
-                        x: { ticks: { color: '#8a9968', maxRotation: 45, autoSkip: true, maxTicksLimit: 10 } },
-                        y: { ticks: { color: '#8a9968', stepSize: 1 }, grid: { color: '#2a2a2a' } }
+                        x: { ticks: { color: textColor, maxRotation: 45, autoSkip: true, maxTicksLimit: 10 } },
+                        y: { ticks: { color: textColor, stepSize: 1 }, grid: { color: gridColor } }
                     }
                 }
             });
@@ -235,15 +299,13 @@
                 container.innerHTML = '<div class="empty-state">📭 No activity yet.</div>';
                 return;
             }
-            // Group by date (last 30 days)
             const grouped = {};
             history.forEach(item => {
                 const date = item.date;
                 if (!grouped[date]) grouped[date] = [];
                 grouped[date].push(item);
             });
-            // Sort dates descending
-            const sortedDates = Object.keys(grouped).sort((a,b) => new Date(b) - new Date(a));
+            const sortedDates = Object.keys(grouped).sort().reverse();
             let html = '';
             for (const date of sortedDates.slice(0, 30)) {
                 const items = grouped[date];
@@ -261,8 +323,20 @@
                 html += `</div>`;
             }
             container.innerHTML = html;
+        },
+
+        // Auto-check login on page load
+        init() {
+            if (this.hasValidLogin()) {
+                // Immediately show stats without prompting
+                this.showStatsSection();
+            }
+            // else login form remains visible
         }
     };
+
+    // Start the page: check for existing login
+    stats.init();
 </script>
 </body>
 </html>

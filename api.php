@@ -1,4 +1,39 @@
 <?php
+
+// Load environment variables from /var/www/.env – NO FALLBACK
+$envFile = '/var/www/.env';
+if (!file_exists($envFile)) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Missing .env file']);
+    exit;
+}
+
+$lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+foreach ($lines as $line) {
+    if (strpos(trim($line), '#') === 0) continue;
+    $parts = explode('=', $line, 2);
+    if (count($parts) === 2) {
+        $key = trim($parts[0]);
+        $value = trim($parts[1]);
+        putenv("$key=$value");
+        $_ENV[$key] = $value;
+    }
+}
+
+// Define constants – crash if missing (no fallback)
+if (!getenv('PASSKEY_CREATION_KEY')) {
+    http_response_code(500);
+    echo json_encode(['error' => 'PASSKEY_CREATION_KEY not set in .env']);
+    exit;
+}
+if (!getenv('STATS_ACCESS_CODE')) {
+    http_response_code(500);
+    echo json_encode(['error' => 'STATS_ACCESS_CODE not set in .env']);
+    exit;
+}
+define('PASSKEY_CREATION_KEY', getenv('PASSKEY_CREATION_KEY'));
+define('STATS_ACCESS_CODE', getenv('STATS_ACCESS_CODE'));
+
 // Enable error reporting
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -11,7 +46,6 @@ header('Access-Control-Allow-Headers: Content-Type');
 
 define('DATA_DIR', __DIR__ . '/data');
 define('DB_FILE', DATA_DIR . '/data.db');  // ← Changed to data.db
-define('REGISTER_SECRET', 'your-secret-key-here'); // CHANGE THIS!
 
 // Create data directory if it doesn't exist
 if (!is_dir(DATA_DIR)) {
@@ -567,7 +601,7 @@ function check_achievements($db, $userId) {
     }
 
     // Get lemonade completions (quests containing 'lemonade' or 'water')
-    $lemonadeCount = $db->querySingle("SELECT COUNT(*) FROM history WHERE user_id = '$userId' AND type = 'quest_complete' AND (description LIKE '%lemonade%' OR description LIKE '%water%')");
+    $lemonadeCount = $db->querySingle("SELECT COUNT(DISTINCT date) FROM history WHERE user_id = '$userId' AND type = 'quest_complete' AND (description LIKE '%lemonade%' OR description LIKE '%water%')");
 
     // Get morning quests (before 9 AM)
     $morningCount = $db->querySingle("SELECT COUNT(*) FROM history WHERE user_id = '$userId' AND type = 'quest_complete' AND time(timestamp) < '09:00:00'");
@@ -1066,6 +1100,12 @@ if ($method === 'POST' && $action === 'save_theme_preset') {
     file_put_contents($themesFile, json_encode($themes, JSON_PRETTY_PRINT));
 
     echo json_encode(['ok' => true, 'id' => $id]);
+    exit;
+}
+
+if ($method === 'GET' && $action === 'stats_access_code') {
+    header('Content-Type: application/json');
+    echo json_encode(['code' => STATS_ACCESS_CODE]);
     exit;
 }
 
