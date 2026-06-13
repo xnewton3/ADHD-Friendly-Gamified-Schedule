@@ -15,7 +15,6 @@
             document.head.appendChild(link);
         })();
     </script>
-    <script src="webauthn.js" data-cfasync="false"></script>
     <script src="theme-loader.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -48,7 +47,6 @@
             overflow-y: auto;
             overflow-x: auto;
         }
-        /* FLEX‑BASED QUEST ROWS – NO WRAPPING */
         .quest-row {
             display: flex;
             flex-wrap: nowrap;
@@ -70,15 +68,12 @@
         .quest-row .quest-edit,
         .quest-row .quest-delete { flex: 0 0 36px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--dark-grey); border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
         .quest-row .quest-delete { background: var(--error); color: white; }
-
-        /* Smaller desktop screens */
         @media (max-width: 1200px) {
             .quest-row .quest-type { flex-basis: 60px; }
             .quest-row .quest-points-input { flex-basis: 60px; width: 60px; }
             .quest-row .quest-schedule { flex-basis: 80px; width: 80px; }
             .quest-row .quest-reminder { flex-basis: 80px; width: 80px; }
         }
-        /* Hide less important columns on medium screens to avoid wrap */
         @media (max-width: 1000px) {
             .quest-row .quest-schedule,
             .quest-row .quest-points-input,
@@ -86,20 +81,18 @@
             .quest-row .quest-type { display: none; }
             .quest-row .quest-name { flex: 1 1 auto; }
         }
-        /* Mobile adjustments */
         @media (max-width: 600px) {
             .quest-row .drag-handle { flex-basis: 30px; }
             .quest-row .quest-edit,
             .quest-row .quest-delete { flex-basis: 32px; width: 32px; height: 32px; }
             .add-feed-form, .add-shop-form { flex-direction: column; }
         }
-
         .add-quest-section { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
         .add-quest-section h3 { color: var(--jade); margin-bottom: 1rem; }
         .add-quest-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
         .add-quest-form input, .add-quest-form select { padding: 0.75rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); font-family: inherit; }
         .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .nav-button, .save-btn, .reload-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .nav-button, .save-btn, .reload-btn, .logout-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; }
         .nav-actions { display: flex; gap: 0.75rem; }
         .feed-item {
             background: var(--dark-grey-3);
@@ -164,6 +157,7 @@
         <div class="nav-actions">
             <button onclick="manager.saveAll()" class="save-btn">💾 Save All</button>
             <button onclick="window.location.reload()" class="reload-btn">🔄 Refresh</button>
+            <button onclick="manager.logout()" class="logout-btn">🚪 Logout</button>
         </div>
     </div>
     <div class="header"><h1>⚙️ Quest Manager</h1></div>
@@ -181,12 +175,6 @@
     <div class="settings-panel">
         <h2>👤 Profile</h2>
         <div class="settings-grid"><div class="form-group"><label>Profile Picture</label><input type="file" id="avatarInput" accept="image/*" onchange="manager.updateAvatar(event)"></div></div>
-    </div>
-
-    <div class="settings-panel">
-        <h2>🔐 Passkey / Security</h2>
-        <div id="passkeyStatus" style="margin-bottom:1rem;font-size:0.9rem;color:var(--olive-light);"></div>
-        <button class="danger" onclick="manager.resetPasskey()">🗑️ Remove Passkey</button>
     </div>
 
     <div class="settings-panel">
@@ -284,631 +272,636 @@
         </div>
     </div>
 </div>
-    <script>
-        const manager = {
-            data: null,
-            settings: null,
-            quests: [],
-            shopItems: [],
-            calendarFeeds: [],
-            draggedIndex: null,
-            editingIndex: null,
-            editingShopId: null,
-            currentTheme: 'default',
-            themesData: null,
 
-            hashCode(str) {
-                let hash = 0;
-                for (let i = 0; i < str.length; i++) {
-                    const char = str.charCodeAt(i);
-                    hash = ((hash << 5) - hash) + char;
-                    hash |= 0;
+<script>
+    const manager = {
+        data: null,
+        settings: null,
+        quests: [],
+        shopItems: [],
+        calendarFeeds: [],
+        draggedIndex: null,
+        editingIndex: null,
+        editingShopId: null,
+        currentTheme: 'default',
+        themesData: null,
+
+        // Auth check
+        async checkAuth() {
+            try {
+                const res = await fetch('api.php?action=login_status');
+                const data = await res.json();
+                if (!data.verified) {
+                    window.location.href = 'index.html';
+                    return false;
                 }
-                return Math.abs(hash).toString(36);
-            },
-            escapeHtml(str) {
-                return String(str || '').replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : m);
-            },
+                return true;
+            } catch(e) {
+                window.location.href = 'index.html';
+                return false;
+            }
+        },
 
-            async init() {
-                await this.loadData();
-                await this.loadThemes();
-                this.renderQuests();
-                this.renderPasskeyStatus();
-                this.renderCalendarFeeds();
-                await this.loadStoredCalendarQuests();
-                this.renderShopItems();
-                this.setupCustomTheme();
-            },
+        async init() {
+            const authenticated = await this.checkAuth();
+            if (!authenticated) return;
+            await this.loadData();
+            await this.loadThemes();
+            this.renderQuests();
+            this.renderCalendarFeeds();
+            await this.loadStoredCalendarQuests();
+            this.renderShopItems();
+            this.setupCustomTheme();
+        },
 
-            async loadData() {
-                try {
-                    const res = await fetch('api.php');
-                    if (res.ok) {
-                        const parsed = await res.json();
-                        this.quests = parsed.quests || [];
-                        this.shopItems = parsed.shopItems || [];
-                        this.calendarFeeds = parsed.calendarFeeds || [];
-                    }
-                } catch(e) { console.error(e); }
-            },
+        logout() {
+            fetch('api.php?action=logout', { method: 'POST' }).finally(() => {
+                window.location.href = 'index.html';
+            });
+        },
 
-            async saveQuests() {
-                const nonCalendar = this.quests.filter(q => q.type !== 'calendar');
-                try {
-                    await fetch('api.php?action=update_quests', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ quests: nonCalendar })
-                    });
-                    console.log('✅ Quests saved');
-                } catch(e) { console.error(e); alert('Failed to save quests'); }
-            },
+        hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return Math.abs(hash).toString(36);
+        },
+        escapeHtml(str) {
+            return String(str || '').replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : m);
+        },
 
-            async saveAll() {
-                await this.saveQuests();
-                alert('💾 All changes saved!');
-            },
-
-            renderQuests() {
-                const mainContainer = document.getElementById('mainQuestsList');
-                const sideContainer = document.getElementById('sideQuestsList');
-                if (mainContainer) {
-                    mainContainer.innerHTML = '';
-                    const mainQuests = this.quests.filter(q => q.type === 'main' && !q.from_calendar);
-                    mainQuests.forEach((quest, idx) => {
-                        const origIdx = this.quests.findIndex(q => q.id === quest.id);
-                        mainContainer.appendChild(this.createQuestRow(quest, origIdx));
-                    });
+        async loadData() {
+            try {
+                const res = await fetch('api.php');
+                if (res.ok) {
+                    const parsed = await res.json();
+                    this.quests = parsed.quests || [];
+                    this.shopItems = parsed.shopItems || [];
+                    this.calendarFeeds = parsed.calendarFeeds || [];
                 }
-                if (sideContainer) {
-                    sideContainer.innerHTML = '';
-                    const sideQuests = this.quests.filter(q => q.type === 'side' && !q.from_calendar);
-                    sideQuests.forEach((quest, idx) => {
-                        const origIdx = this.quests.findIndex(q => q.id === quest.id);
-                        sideContainer.appendChild(this.createQuestRow(quest, origIdx));
-                    });
-                }
-            },
+            } catch(e) { console.error(e); }
+        },
 
-            createQuestRow(quest, index) {
-                const row = document.createElement('div');
-                row.className = 'quest-row' + (quest.type === 'side' ? ' side' : '');
-                row.draggable = true;
-                row.dataset.index = index;
-                row.innerHTML = `
-                    <div class="drag-handle">⋮⋮</div>
-                    <div class="quest-name" onclick="manager.openEditModal(${index})">${this.escapeHtml(quest.name)}</div>
-                    <div class="quest-type${quest.type === 'side' ? ' side' : ''}">${quest.type === 'main' ? 'Main' : 'Side'}</div>
-                    <input type="number" class="quest-points-input" value="${quest.points || 1}" onchange="manager.updatePoints(${index}, this.value)">
-                    <input type="text" class="quest-schedule" value="${this.escapeHtml(quest.schedule || 'Daily')}" onchange="manager.updateSchedule(${index}, this.value)">
-                    <input type="text" class="quest-reminder" placeholder="9:00 am" value="${quest.reminder_time || ''}" onchange="manager.updateReminder(${index}, this.value)">
-                    <button class="quest-edit" onclick="manager.openEditModal(${index})">✏️</button>
-                    <button class="quest-delete" onclick="manager.deleteQuest(${index})">🗑️</button>
-                `;
-                row.addEventListener('dragstart', (e) => { this.draggedIndex = index; e.dataTransfer.effectAllowed = 'move'; });
-                row.addEventListener('dragover', (e) => e.preventDefault());
-                row.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    if (this.draggedIndex !== null && this.draggedIndex !== index) {
-                        const dragged = this.quests[this.draggedIndex];
-                        this.quests.splice(this.draggedIndex, 1);
-                        this.quests.splice(index, 0, dragged);
-                        this.saveQuests();
-                        this.renderQuests();
-                    }
-                    this.draggedIndex = null;
+        async saveQuests() {
+            const nonCalendar = this.quests.filter(q => q.type !== 'calendar');
+            try {
+                await fetch('api.php?action=update_quests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quests: nonCalendar })
                 });
-                return row;
-            },
+                console.log('✅ Quests saved');
+            } catch(e) { console.error(e); alert('Failed to save quests'); }
+        },
 
-            openEditModal(index) {
-                this.editingIndex = index;
-                const quest = this.quests[index];
-                document.getElementById('editQuestName').value = quest.name;
-                document.getElementById('editQuestType').value = quest.type;
-                document.getElementById('editQuestPoints').value = quest.points || 1;
-                document.getElementById('editQuestSchedule').value = quest.schedule || 'Daily';
-                document.getElementById('editQuestReminder').value = quest.reminder_time || '';
-                document.getElementById('editModal').classList.remove('hidden');
-            },
-            closeEditModal() { document.getElementById('editModal').classList.add('hidden'); this.editingIndex = null; },
-            saveEditQuest() {
-                if (this.editingIndex === null) return;
-                const quest = this.quests[this.editingIndex];
-                quest.name = document.getElementById('editQuestName').value;
-                quest.type = document.getElementById('editQuestType').value;
-                quest.points = parseInt(document.getElementById('editQuestPoints').value) || 1;
-                quest.schedule = document.getElementById('editQuestSchedule').value || 'Daily';
-                quest.reminder_time = document.getElementById('editQuestReminder').value || null;
-                this.saveQuests();
-                this.closeEditModal();
-                this.renderQuests();
-                alert('✅ Quest updated');
-            },
-            updatePoints(idx, val) { this.quests[idx].points = Math.max(1, parseInt(val) || 1); this.saveQuests(); },
-            updateSchedule(idx, val) { this.quests[idx].schedule = val || 'Daily'; this.saveQuests(); },
-            updateReminder(idx, val) { this.quests[idx].reminder_time = val || null; this.saveQuests(); },
-            deleteQuest(idx) {
-                if (confirm(`Delete "${this.quests[idx].name}"?`)) {
-                    this.quests.splice(idx, 1);
+        async saveAll() {
+            await this.saveQuests();
+            alert('💾 All changes saved!');
+        },
+
+        renderQuests() {
+            const mainContainer = document.getElementById('mainQuestsList');
+            const sideContainer = document.getElementById('sideQuestsList');
+            if (mainContainer) {
+                mainContainer.innerHTML = '';
+                const mainQuests = this.quests.filter(q => q.type === 'main' && !q.from_calendar);
+                mainQuests.forEach((quest, idx) => {
+                    const origIdx = this.quests.findIndex(q => q.id === quest.id);
+                    mainContainer.appendChild(this.createQuestRow(quest, origIdx));
+                });
+            }
+            if (sideContainer) {
+                sideContainer.innerHTML = '';
+                const sideQuests = this.quests.filter(q => q.type === 'side' && !q.from_calendar);
+                sideQuests.forEach((quest, idx) => {
+                    const origIdx = this.quests.findIndex(q => q.id === quest.id);
+                    sideContainer.appendChild(this.createQuestRow(quest, origIdx));
+                });
+            }
+        },
+
+        createQuestRow(quest, index) {
+            const row = document.createElement('div');
+            row.className = 'quest-row' + (quest.type === 'side' ? ' side' : '');
+            row.draggable = true;
+            row.dataset.index = index;
+            row.innerHTML = `
+                <div class="drag-handle">⋮⋮</div>
+                <div class="quest-name" onclick="manager.openEditModal(${index})">${this.escapeHtml(quest.name)}</div>
+                <div class="quest-type${quest.type === 'side' ? ' side' : ''}">${quest.type === 'main' ? 'Main' : 'Side'}</div>
+                <input type="number" class="quest-points-input" value="${quest.points || 1}" onchange="manager.updatePoints(${index}, this.value)">
+                <input type="text" class="quest-schedule" value="${this.escapeHtml(quest.schedule || 'Daily')}" onchange="manager.updateSchedule(${index}, this.value)">
+                <input type="text" class="quest-reminder" placeholder="9:00 am" value="${quest.reminder_time || ''}" onchange="manager.updateReminder(${index}, this.value)">
+                <button class="quest-edit" onclick="manager.openEditModal(${index})">✏️</button>
+                <button class="quest-delete" onclick="manager.deleteQuest(${index})">🗑️</button>
+            `;
+            row.addEventListener('dragstart', (e) => { this.draggedIndex = index; e.dataTransfer.effectAllowed = 'move'; });
+            row.addEventListener('dragover', (e) => e.preventDefault());
+            row.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (this.draggedIndex !== null && this.draggedIndex !== index) {
+                    const dragged = this.quests[this.draggedIndex];
+                    this.quests.splice(this.draggedIndex, 1);
+                    this.quests.splice(index, 0, dragged);
                     this.saveQuests();
                     this.renderQuests();
                 }
-            },
-            addQuest() {
-                const name = document.getElementById('newQuestName').value.trim();
-                const type = document.getElementById('newQuestType').value;
-                const points = parseInt(document.getElementById('newQuestPoints').value) || 1;
-                const schedule = document.getElementById('newQuestSchedule').value.trim() || 'Daily';
-                const reminder = document.getElementById('newQuestReminder').value.trim() || null;
-                if (!name) { alert('Enter a name'); return; }
-                this.quests.push({
-                    id: 'custom-' + Date.now(),
-                    name, type, points, schedule, reminder_time: reminder,
-                    completed: false, from_calendar: 0
-                });
+                this.draggedIndex = null;
+            });
+            return row;
+        },
+
+        openEditModal(index) {
+            this.editingIndex = index;
+            const quest = this.quests[index];
+            document.getElementById('editQuestName').value = quest.name;
+            document.getElementById('editQuestType').value = quest.type;
+            document.getElementById('editQuestPoints').value = quest.points || 1;
+            document.getElementById('editQuestSchedule').value = quest.schedule || 'Daily';
+            document.getElementById('editQuestReminder').value = quest.reminder_time || '';
+            document.getElementById('editModal').classList.remove('hidden');
+        },
+        closeEditModal() { document.getElementById('editModal').classList.add('hidden'); this.editingIndex = null; },
+        saveEditQuest() {
+            if (this.editingIndex === null) return;
+            const quest = this.quests[this.editingIndex];
+            quest.name = document.getElementById('editQuestName').value;
+            quest.type = document.getElementById('editQuestType').value;
+            quest.points = parseInt(document.getElementById('editQuestPoints').value) || 1;
+            quest.schedule = document.getElementById('editQuestSchedule').value || 'Daily';
+            quest.reminder_time = document.getElementById('editQuestReminder').value || null;
+            this.saveQuests();
+            this.closeEditModal();
+            this.renderQuests();
+            alert('✅ Quest updated');
+        },
+        updatePoints(idx, val) { this.quests[idx].points = Math.max(1, parseInt(val) || 1); this.saveQuests(); },
+        updateSchedule(idx, val) { this.quests[idx].schedule = val || 'Daily'; this.saveQuests(); },
+        updateReminder(idx, val) { this.quests[idx].reminder_time = val || null; this.saveQuests(); },
+        deleteQuest(idx) {
+            if (confirm(`Delete "${this.quests[idx].name}"?`)) {
+                this.quests.splice(idx, 1);
                 this.saveQuests();
                 this.renderQuests();
-                document.getElementById('newQuestName').value = '';
-                document.getElementById('newQuestSchedule').value = '';
-                document.getElementById('newQuestReminder').value = '';
-                alert('✅ Quest added');
-            },
-            async updateAvatar(event) {
-                const file = event.target.files[0];
-                if (!file) return;
-                const fd = new FormData();
-                fd.append('avatar', file);
-                try {
-                    const res = await fetch('api.php?action=avatar', { method: 'POST', body: fd });
-                    if (res.ok) alert('✅ Avatar uploaded');
-                    else alert('Upload failed');
-                } catch(e) { alert('Error'); }
-            },
+            }
+        },
+        addQuest() {
+            const name = document.getElementById('newQuestName').value.trim();
+            const type = document.getElementById('newQuestType').value;
+            const points = parseInt(document.getElementById('newQuestPoints').value) || 1;
+            const schedule = document.getElementById('newQuestSchedule').value.trim() || 'Daily';
+            const reminder = document.getElementById('newQuestReminder').value.trim() || null;
+            if (!name) { alert('Enter a name'); return; }
+            this.quests.push({
+                id: 'custom-' + Date.now(),
+                name, type, points, schedule, reminder_time: reminder,
+                completed: false, from_calendar: 0
+            });
+            this.saveQuests();
+            this.renderQuests();
+            document.getElementById('newQuestName').value = '';
+            document.getElementById('newQuestSchedule').value = '';
+            document.getElementById('newQuestReminder').value = '';
+            alert('✅ Quest added');
+        },
+        async updateAvatar(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const fd = new FormData();
+            fd.append('avatar', file);
+            try {
+                const res = await fetch('api.php?action=avatar', { method: 'POST', body: fd });
+                if (res.ok) alert('✅ Avatar uploaded');
+                else alert('Upload failed');
+            } catch(e) { alert('Error'); }
+        },
 
-            renderPasskeyStatus() {
-                const el = document.getElementById('passkeyStatus');
-                if (!el) return;
-                const supported = WebAuthnHelper.isSupported();
-                const registered = WebAuthnHelper.isRegistered();
-                if (!supported) el.innerHTML = '❌ WebAuthn not supported.';
-                else if (registered) el.innerHTML = '✅ Passkey registered on this device.';
-                else el.innerHTML = '⚠️ No passkey registered.';
-            },
-            resetPasskey() {
-                if (confirm('Remove passkey? You will be logged out.')) {
-                    WebAuthnHelper.reset();
-                    alert('Passkey removed. Redirecting...');
-                    window.location.href = 'index.html';
+        renderCalendarFeeds() {
+            const container = document.getElementById('calendarFeedsList');
+            if (!container) return;
+            if (!this.calendarFeeds.length) {
+                container.innerHTML = '<p style="color:var(--olive-light);">📭 No calendar feeds added yet.</p>';
+                return;
+            }
+            container.innerHTML = this.calendarFeeds.map(feed => `
+                <div class="feed-item">
+                    <span><strong>${this.escapeHtml(feed.name)}</strong><br><small>${this.escapeHtml(feed.url)}</small></span>
+                    <button onclick="manager.removeCalendarFeed(${feed.id})" style="background:var(--error); padding:0.25rem 0.75rem;">🗑️</button>
+                </div>
+            `).join('');
+        },
+
+        async fetchCalendarEvents(url) {
+            if (!url) return [];
+            try {
+                const proxy = `api.php?action=ical_proxy&url=${encodeURIComponent(url)}`;
+                const res = await fetch(proxy);
+                if (!res.ok) return [];
+                const text = await res.text();
+                return this.parseICal(text);
+            } catch(e) { console.warn(e); return []; }
+        },
+
+        parseICal(data) {
+            const events = [];
+            const lines = data.split(/\r?\n/);
+            let current = null;
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                while (lines[i+1] && lines[i+1].startsWith(' ')) {
+                    line += lines[i+1].trim();
+                    i++;
                 }
-            },
-
-            renderCalendarFeeds() {
-                const container = document.getElementById('calendarFeedsList');
-                if (!container) return;
-                if (!this.calendarFeeds.length) {
-                    container.innerHTML = '<p style="color:var(--olive-light);">📭 No calendar feeds added yet.</p>';
-                    return;
-                }
-                container.innerHTML = this.calendarFeeds.map(feed => `
-                    <div class="feed-item">
-                        <span><strong>${this.escapeHtml(feed.name)}</strong><br><small>${this.escapeHtml(feed.url)}</small></span>
-                        <button onclick="manager.removeCalendarFeed(${feed.id})" style="background:var(--error); padding:0.25rem 0.75rem;">🗑️</button>
-                    </div>
-                `).join('');
-            },
-
-            async fetchCalendarEvents(url) {
-                if (!url) return [];
-                try {
-                    const proxy = `api.php?action=ical_proxy&url=${encodeURIComponent(url)}`;
-                    const res = await fetch(proxy);
-                    if (!res.ok) return [];
-                    const text = await res.text();
-                    return this.parseICal(text);
-                } catch(e) { console.warn(e); return []; }
-            },
-
-            parseICal(data) {
-                const events = [];
-                const lines = data.split(/\r?\n/);
-                let current = null;
-                for (let i = 0; i < lines.length; i++) {
-                    let line = lines[i].trim();
-                    while (lines[i+1] && lines[i+1].startsWith(' ')) {
-                        line += lines[i+1].trim();
-                        i++;
+                if (line === 'BEGIN:VEVENT') {
+                    current = {};
+                } else if (line === 'END:VEVENT' && current && current.summary) {
+                    if (current.description && current.description.toLowerCase().includes('ical')) {
+                        events.push(current);
                     }
-                    if (line === 'BEGIN:VEVENT') {
-                        current = {};
-                    } else if (line === 'END:VEVENT' && current && current.summary) {
-                        // Keep the 'ical' filter
-                        if (current.description && current.description.toLowerCase().includes('ical')) {
-                            events.push(current);
-                        }
-                        current = null;
-                    } else if (current) {
-                        const colon = line.indexOf(':');
-                        if (colon === -1) continue;
-                        const key = line.substring(0, colon).split(';')[0];
-                        let val = line.substring(colon + 1);
-                        if (key === 'SUMMARY') current.summary = val.replace(/\\,/g, ',').replace(/\\n/g, '\n');
-                        else if (key === 'DESCRIPTION') {
-                            current.description = val.replace(/\\,/g, ',').replace(/\\n/g, '\n');
-                            const pointsMatch = current.description.match(/ical:(\d+)/i);
-                            current.points = pointsMatch ? parseInt(pointsMatch[1],10) : 1;
-                        }
-                        else if (key === 'DTSTART') {
-                            let dstr = val;
-                            if (dstr.includes(':')) dstr = dstr.split(':').pop();
-                            const d = this.parseICalDate(dstr);
-                            if (d) current.start = d;
-                        }
-                        else if (key === 'DTEND') {
-                            let dstr = val;
-                            if (dstr.includes(':')) dstr = dstr.split(':').pop();
-                            const d = this.parseICalDate(dstr);
-                            if (d) current.end = d;
-                        }
-                        else if (key === 'RRULE') current.rrule = val;
-                        else if (key === 'UID') current.uid = val;
+                    current = null;
+                } else if (current) {
+                    const colon = line.indexOf(':');
+                    if (colon === -1) continue;
+                    const key = line.substring(0, colon).split(';')[0];
+                    let val = line.substring(colon + 1);
+                    if (key === 'SUMMARY') current.summary = val.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                    else if (key === 'DESCRIPTION') {
+                        current.description = val.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                        const pointsMatch = current.description.match(/ical:(\d+)/i);
+                        current.points = pointsMatch ? parseInt(pointsMatch[1],10) : 1;
                     }
-                }
-                const today = new Date(); today.setHours(0,0,0,0);
-                const thirty = new Date(today); thirty.setDate(today.getDate()+30);
-                const expanded = [];
-                for (const ev of events) {
-                    if (!ev.start) continue;
-                    if (ev.rrule && ev.rrule.includes('FREQ=WEEKLY')) {
-                        let cur = new Date(ev.start);
-                        const dur = (ev.end ? new Date(ev.end) : new Date(cur)) - cur;
-                        while (cur < today) cur.setDate(cur.getDate()+7);
-                        while (cur <= thirty) {
-                            expanded.push({
-                                summary: ev.summary,
-                                start: new Date(cur),
-                                end: new Date(cur.getTime() + dur),
-                                uid: ev.uid + '_' + cur.toISOString().slice(0,10),
-                                points: ev.points || 1,
-                                description: ev.description
-                            });
-                            cur.setDate(cur.getDate()+7);
-                        }
-                    } else {
-                        expanded.push(ev);
+                    else if (key === 'DTSTART') {
+                        let dstr = val;
+                        if (dstr.includes(':')) dstr = dstr.split(':').pop();
+                        const d = this.parseICalDate(dstr);
+                        if (d) current.start = d;
                     }
+                    else if (key === 'DTEND') {
+                        let dstr = val;
+                        if (dstr.includes(':')) dstr = dstr.split(':').pop();
+                        const d = this.parseICalDate(dstr);
+                        if (d) current.end = d;
+                    }
+                    else if (key === 'RRULE') current.rrule = val;
+                    else if (key === 'UID') current.uid = val;
                 }
-                const upcoming = [];
-                for (const ev of expanded) {
-                    const expiry = ev.end || ev.start;
-                    if (expiry >= today && expiry <= thirty) {
-                        upcoming.push({
+            }
+            const today = new Date(); today.setHours(0,0,0,0);
+            const thirty = new Date(today); thirty.setDate(today.getDate()+30);
+            const expanded = [];
+            for (const ev of events) {
+                if (!ev.start) continue;
+                if (ev.rrule && ev.rrule.includes('FREQ=WEEKLY')) {
+                    let cur = new Date(ev.start);
+                    const dur = (ev.end ? new Date(ev.end) : new Date(cur)) - cur;
+                    while (cur < today) cur.setDate(cur.getDate()+7);
+                    while (cur <= thirty) {
+                        expanded.push({
                             summary: ev.summary,
-                            start: ev.start,
-                            end: ev.end,
-                            uid: ev.uid,
-                            expires: expiry.toDateString(),
-                            points: ev.points || 1
+                            start: new Date(cur),
+                            end: new Date(cur.getTime() + dur),
+                            uid: ev.uid + '_' + cur.toISOString().slice(0,10),
+                            points: ev.points || 1,
+                            description: ev.description
                         });
+                        cur.setDate(cur.getDate()+7);
                     }
+                } else {
+                    expanded.push(ev);
                 }
-                upcoming.sort((a,b)=>a.start-b.start);
-                return upcoming;
-            },
-
-            parseICalDate(str) {
-                if (!str.match(/^\d{8}(T\d{6})?$/)) return null;
-                const year = parseInt(str.substring(0,4));
-                const month = parseInt(str.substring(4,6))-1;
-                const day = parseInt(str.substring(6,8));
-                let hour=0,min=0,sec=0;
-                if (str.length>=15 && str.includes('T')) {
-                    const time = str.split('T')[1];
-                    hour = parseInt(time.substring(0,2));
-                    min = parseInt(time.substring(2,4));
-                    sec = parseInt(time.substring(4,6));
+            }
+            const upcoming = [];
+            for (const ev of expanded) {
+                const expiry = ev.end || ev.start;
+                if (expiry >= today && expiry <= thirty) {
+                    upcoming.push({
+                        summary: ev.summary,
+                        start: ev.start,
+                        end: ev.end,
+                        uid: ev.uid,
+                        expires: expiry.toDateString(),
+                        points: ev.points || 1
+                    });
                 }
-                return new Date(year, month, day, hour, min, sec);
-            },
+            }
+            upcoming.sort((a,b)=>a.start-b.start);
+            return upcoming;
+        },
 
-            formatTime12hr(d) {
-                let h = d.getHours();
-                const m = d.getMinutes();
-                const ampm = h>=12 ? 'pm' : 'am';
-                h = h % 12 || 12;
-                return `${h}:${m.toString().padStart(2,'0')} ${ampm}`;
-            },
+        parseICalDate(str) {
+            if (!str.match(/^\d{8}(T\d{6})?$/)) return null;
+            const year = parseInt(str.substring(0,4));
+            const month = parseInt(str.substring(4,6))-1;
+            const day = parseInt(str.substring(6,8));
+            let hour=0,min=0,sec=0;
+            if (str.length>=15 && str.includes('T')) {
+                const time = str.split('T')[1];
+                hour = parseInt(time.substring(0,2));
+                min = parseInt(time.substring(2,4));
+                sec = parseInt(time.substring(4,6));
+            }
+            return new Date(year, month, day, hour, min, sec);
+        },
 
-            addCalendarFeed() {
-                const name = document.getElementById('newFeedName').value.trim();
-                const url = document.getElementById('newFeedUrl').value.trim();
-                if (!name || !url) { alert('Enter both name and URL'); return; }
-                fetch('api.php?action=add_calendar_feed', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, url })
-                }).then(() => {
-                    this.loadData().then(() => {
+        formatTime12hr(d) {
+            let h = d.getHours();
+            const m = d.getMinutes();
+            const ampm = h>=12 ? 'pm' : 'am';
+            h = h % 12 || 12;
+            return `${h}:${m.toString().padStart(2,'0')} ${ampm}`;
+        },
+
+        addCalendarFeed() {
+            const name = document.getElementById('newFeedName').value.trim();
+            const url = document.getElementById('newFeedUrl').value.trim();
+            if (!name || !url) { alert('Enter both name and URL'); return; }
+            fetch('api.php?action=add_calendar_feed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, url })
+            }).then(() => {
+                this.loadData().then(() => {
+                    this.renderCalendarFeeds();
+                    this.refreshCalendarQuests();
+                });
+                document.getElementById('newFeedName').value = '';
+                document.getElementById('newFeedUrl').value = '';
+                alert('✅ Feed added');
+            }).catch(e => alert('Failed'));
+        },
+
+        removeCalendarFeed(id) {
+            if (confirm('Remove this feed?')) {
+                fetch(`api.php?action=delete_calendar_feed&id=${id}`, { method: 'DELETE' })
+                    .then(() => this.loadData().then(() => {
                         this.renderCalendarFeeds();
                         this.refreshCalendarQuests();
-                    });
-                    document.getElementById('newFeedName').value = '';
-                    document.getElementById('newFeedUrl').value = '';
-                    alert('✅ Feed added');
-                }).catch(e => alert('Failed'));
-            },
+                    }));
+            }
+        },
 
-            removeCalendarFeed(id) {
-                if (confirm('Remove this feed?')) {
-                    fetch(`api.php?action=delete_calendar_feed&id=${id}`, { method: 'DELETE' })
-                        .then(() => this.loadData().then(() => {
-                            this.renderCalendarFeeds();
-                            this.refreshCalendarQuests();
-                        }));
-                }
-            },
-
-            async refreshCalendarQuests() {
-                const feedsRes = await fetch('api.php?action=calendar_feeds');
-                if (!feedsRes.ok) { alert('Cannot fetch feeds'); return; }
-                const feedsData = await feedsRes.json();
-                const feeds = feedsData.feeds || [];
-                if (feeds.length === 0) {
-                    await this.deleteAllCalendarQuests();
-                    return;
-                }
-                let allEvents = [];
-                for (const feed of feeds) {
-                    try {
-                        const events = await this.fetchCalendarEvents(feed.url);
-                        allEvents.push(...events);
-                    } catch(e) { console.warn(e); }
-                }
-                const calendarQuests = [];
-                for (const ev of allEvents) {
-                    const startStr = ev.start.toDateString();
-                    const name = `📅 ${ev.summary || 'Calendar Event'}`;
-                    const id = `cal_${this.hashCode(name + startStr + (ev.end ? ev.end.toDateString() : startStr))}`;
-                    calendarQuests.push({
-                        id: id,
-                        name: name,
-                        type: 'calendar',
-                        points: ev.points || 1,
-                        reminder_time: ev.start ? this.formatTime12hr(ev.start) : null,
-                        expires: startStr,
-                        created_at: new Date().toISOString()
-                    });
-                }
-                await fetch('api.php?action=calendar_quests', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quests: calendarQuests, lastUpdated: new Date().toISOString() })
-                });
-                await this.loadStoredCalendarQuests();
-                alert('✅ Calendar quests refreshed');
-            },
-
-            async loadStoredCalendarQuests() {
-                const res = await fetch('api.php?action=calendar_quests');
-                if (!res.ok) return;
-                const data = await res.json();
-                const container = document.getElementById('storedCalendarQuestsList');
-                if (!data.quests.length) {
-                    container.innerHTML = '<p style="color:var(--olive-light); margin-top:0.5rem;">📭 No stored calendar quests.</p>';
-                    return;
-                }
-                container.innerHTML = data.quests.map(q => `
-                    <div class="calendar-quest-item">
-                        <div>
-                            <div class="calendar-quest-name">${this.escapeHtml(q.name)}</div>
-                            <div class="calendar-quest-details">Expires: ${q.expires} | Points: ${q.points}</div>
-                        </div>
-                        <button onclick="manager.deleteCalendarQuest('${q.id}')" style="background:var(--error); padding:0.25rem 0.75rem;">🗑️</button>
-                    </div>
-                `).join('');
-            },
-
-            async deleteCalendarQuest(id) {
-                if (confirm('Delete this calendar quest? It will be recreated on next sync if the event still exists.')) {
-                    await fetch('api.php?action=delete_calendar_quest', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id })
-                    });
-                    await this.loadStoredCalendarQuests();
-                }
-            },
-
-            async deleteAllCalendarQuests() {
-                if (confirm('Delete ALL calendar quests? They will be recreated on next sync.')) {
-                    await fetch('api.php?action=delete_all_calendar_quests', { method: 'POST' });
-                    await this.loadStoredCalendarQuests();
-                }
-            },
-
-            renderShopItems() {
-                const container = document.getElementById('shopItemsList');
-                if (!container) return;
-                if (!this.shopItems.length) {
-                    container.innerHTML = '<p style="color:var(--olive-light);">🏪 No shop items yet.</p>';
-                    return;
-                }
-                container.innerHTML = this.shopItems.map(item => `
-                    <div class="feed-item" style="display: flex; justify-content: space-between; align-items: center;">
-                        <div class="shop-item-info">
-                            <strong>${this.escapeHtml(item.name)}</strong>
-                            <span class="shop-item-cost">🪙 ${item.cost} points</span>
-                        </div>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="manager.editShopItem(${item.id})" style="background:var(--accent);">✏️</button>
-                            <button onclick="manager.removeShopItem(${item.id})" style="background:var(--error);">🗑️</button>
-                        </div>
-                    </div>
-                `).join('');
-            },
-
-            addShopItem() {
-                const name = document.getElementById('newShopName').value.trim();
-                const cost = parseInt(document.getElementById('newShopCost').value);
-                if (!name || isNaN(cost)) { alert('Enter valid name and cost'); return; }
-                fetch('api.php?action=add_shop_item', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, cost })
-                }).then(() => {
-                    this.loadData().then(() => this.renderShopItems());
-                    document.getElementById('newShopName').value = '';
-                    document.getElementById('newShopCost').value = '10';
-                    alert('✅ Shop item added');
-                }).catch(e => alert('Failed'));
-            },
-
-            editShopItem(id) {
-                const item = this.shopItems.find(i => i.id == id);
-                if (!item) return;
-                this.editingShopId = id;
-                document.getElementById('editShopName').value = item.name;
-                document.getElementById('editShopCost').value = item.cost;
-                document.getElementById('editShopModal').classList.remove('hidden');
-            },
-            closeShopModal() {
-                document.getElementById('editShopModal').classList.add('hidden');
-                this.editingShopId = null;
-            },
-            async saveShopEdit() {
-                if (!this.editingShopId) return;
-                const name = document.getElementById('editShopName').value.trim();
-                const cost = parseInt(document.getElementById('editShopCost').value);
-                if (!name || isNaN(cost)) return;
-                await fetch('api.php?action=update_shop_item', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: this.editingShopId, name, cost })
-                });
-                await this.loadData();
-                this.renderShopItems();
-                this.closeShopModal();
-            },
-
-            removeShopItem(id) {
-                if (confirm('Remove this item?')) {
-                    fetch(`api.php?action=delete_shop_item&id=${id}`, { method: 'DELETE' })
-                        .then(() => this.loadData().then(() => this.renderShopItems()));
-                }
-            },
-
-            async loadThemes() {
+        async refreshCalendarQuests() {
+            const feedsRes = await fetch('api.php?action=calendar_feeds');
+            if (!feedsRes.ok) { alert('Cannot fetch feeds'); return; }
+            const feedsData = await feedsRes.json();
+            const feeds = feedsData.feeds || [];
+            if (feeds.length === 0) {
+                await this.deleteAllCalendarQuests();
+                return;
+            }
+            let allEvents = [];
+            for (const feed of feeds) {
                 try {
-                    const res = await fetch('data/themes.json?_=' + Date.now());
-                    if (res.ok) {
-                        this.themesData = await res.json();
-                        this.renderThemePresets();
-                    }
-                } catch(e) { console.error(e); }
-            },
-
-            renderThemePresets() {
-                const container = document.getElementById('themePresets');
-                if (!container || !this.themesData) return;
-                const current = this.currentTheme || 'default';
-                container.innerHTML = '';
-                for (const t of this.themesData.themes) {
-                    const card = document.createElement('div');
-                    card.className = `theme-card ${current === t.id ? 'active' : ''}`;
-                    card.innerHTML = `<div class="theme-name">${t.name}</div><div class="theme-colors"><div class="color-dot" style="background: var(--jade);"></div></div>`;
-                    card.onclick = () => this.applyTheme(t.id);
-                    container.appendChild(card);
-                }
-                const customCard = document.createElement('div');
-                customCard.className = `theme-card ${current === 'custom' ? 'active' : ''}`;
-                customCard.innerHTML = `<div class="theme-name">🎨 Custom</div><div class="theme-colors"><div class="color-dot" style="background: var(--accent);"></div></div>`;
-                customCard.onclick = () => {
-                    document.getElementById('customThemeForm').style.display = 'block';
-                    this.currentTheme = 'custom';
-                    this.renderThemePresets();
-                };
-                container.appendChild(customCard);
-            },
-
-            async applyTheme(themeId) {
-                await fetch('api.php?action=set_theme', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ theme: themeId })
-                });
-                this.currentTheme = themeId;
-                localStorage.setItem('active_theme', themeId);
-                const link = document.getElementById('themeStylesheet');
-                if (link) {
-                    const url = themeId === 'custom' ? 'css/custom-theme.css' : `css/theme-${themeId}.css`;
-                    link.href = url + '?_=' + Date.now();
-                }
-                this.renderThemePresets();
-                document.getElementById('customThemeForm').style.display = 'none';
-            },
-
-            setupCustomTheme() {
-                document.getElementById('applyCustomBtn')?.addEventListener('click', async () => {
-                    const colors = {
-                        '--jade': document.getElementById('customJade').value,
-                        '--jade-dark': document.getElementById('customJadeDark').value,
-                        '--olive': document.getElementById('customOlive').value,
-                        '--olive-light': document.getElementById('customOliveLight').value,
-                        '--dark-grey': document.getElementById('customDarkGrey').value,
-                        '--dark-grey-2': document.getElementById('customDarkGrey2').value,
-                        '--dark-grey-3': document.getElementById('customDarkGrey3').value,
-                        '--cream': document.getElementById('customCream').value,
-                        '--accent': document.getElementById('customAccent').value,
-                        '--success': document.getElementById('customSuccess').value,
-                        '--warning': document.getElementById('customWarning').value,
-                        '--error': document.getElementById('customError').value
-                    };
-                    if (await ThemeLoader.saveCustomTheme(colors)) {
-                        await this.applyTheme('custom');
-                        alert('✅ Custom theme applied');
-                    } else alert('❌ Failed');
-                });
-                document.getElementById('saveCustomBtn')?.addEventListener('click', async () => {
-                    const name = prompt('Theme name:', 'My Custom Theme');
-                    if (!name) return;
-                    const colors = {
-                        '--jade': document.getElementById('customJade').value,
-                        '--jade-dark': document.getElementById('customJadeDark').value,
-                        '--olive': document.getElementById('customOlive').value,
-                        '--olive-light': document.getElementById('customOliveLight').value,
-                        '--dark-grey': document.getElementById('customDarkGrey').value,
-                        '--dark-grey-2': document.getElementById('customDarkGrey2').value,
-                        '--dark-grey-3': document.getElementById('customDarkGrey3').value,
-                        '--cream': document.getElementById('customCream').value,
-                        '--accent': document.getElementById('customAccent').value,
-                        '--success': document.getElementById('customSuccess').value,
-                        '--warning': document.getElementById('customWarning').value,
-                        '--error': document.getElementById('customError').value
-                    };
-                    try {
-                        const res = await fetch('api.php?action=save_theme_preset', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ name, colors })
-                        });
-                        if (res.ok) {
-                            alert(`✅ Theme "${name}" saved!`);
-                            await this.loadThemes();
-                            const data = await res.json();
-                            if (data.id) await this.applyTheme(data.id);
-                        } else alert('❌ Failed to save theme');
-                    } catch(e) { alert('Error'); }
+                    const events = await this.fetchCalendarEvents(feed.url);
+                    allEvents.push(...events);
+                } catch(e) { console.warn(e); }
+            }
+            const calendarQuests = [];
+            for (const ev of allEvents) {
+                const startStr = ev.start.toDateString();
+                const name = `📅 ${ev.summary || 'Calendar Event'}`;
+                const id = `cal_${this.hashCode(name + startStr + (ev.end ? ev.end.toDateString() : startStr))}`;
+                calendarQuests.push({
+                    id: id,
+                    name: name,
+                    type: 'calendar',
+                    points: ev.points || 1,
+                    reminder_time: ev.start ? this.formatTime12hr(ev.start) : null,
+                    expires: startStr,
+                    created_at: new Date().toISOString()
                 });
             }
-        };
-        try {
-            manager.init();
-        } catch(e) {
-            var errorDiv = document.getElementById('errorDisplay');
-            errorDiv.style.display = 'block';
-            errorDiv.innerHTML = 'Init error: ' + e.message + ' stack: ' + e.stack;
-        }
-    </script>
+            await fetch('api.php?action=calendar_quests', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quests: calendarQuests, lastUpdated: new Date().toISOString() })
+            });
+            await this.loadStoredCalendarQuests();
+            alert('✅ Calendar quests refreshed');
+        },
 
-    <div class="notch-fix-bottom"></div>
+        async loadStoredCalendarQuests() {
+            const res = await fetch('api.php?action=calendar_quests');
+            if (!res.ok) return;
+            const data = await res.json();
+            const container = document.getElementById('storedCalendarQuestsList');
+            if (!data.quests.length) {
+                container.innerHTML = '<p style="color:var(--olive-light); margin-top:0.5rem;">📭 No stored calendar quests.</p>';
+                return;
+            }
+            container.innerHTML = data.quests.map(q => `
+                <div class="calendar-quest-item">
+                    <div>
+                        <div class="calendar-quest-name">${this.escapeHtml(q.name)}</div>
+                        <div class="calendar-quest-details">Expires: ${q.expires} | Points: ${q.points}</div>
+                    </div>
+                    <button onclick="manager.deleteCalendarQuest('${q.id}')" style="background:var(--error); padding:0.25rem 0.75rem;">🗑️</button>
+                </div>
+            `).join('');
+        },
+
+        async deleteCalendarQuest(id) {
+            if (confirm('Delete this calendar quest? It will be recreated on next sync if the event still exists.')) {
+                await fetch('api.php?action=delete_calendar_quest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                await this.loadStoredCalendarQuests();
+            }
+        },
+
+        async deleteAllCalendarQuests() {
+            if (confirm('Delete ALL calendar quests? They will be recreated on next sync.')) {
+                await fetch('api.php?action=delete_all_calendar_quests', { method: 'POST' });
+                await this.loadStoredCalendarQuests();
+            }
+        },
+
+        renderShopItems() {
+            const container = document.getElementById('shopItemsList');
+            if (!container) return;
+            if (!this.shopItems.length) {
+                container.innerHTML = '<p style="color:var(--olive-light);">🏪 No shop items yet.</p>';
+                return;
+            }
+            container.innerHTML = this.shopItems.map(item => `
+                <div class="feed-item" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="shop-item-info">
+                        <strong>${this.escapeHtml(item.name)}</strong>
+                        <span class="shop-item-cost">🪙 ${item.cost} points</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button onclick="manager.editShopItem(${item.id})" style="background:var(--accent);">✏️</button>
+                        <button onclick="manager.removeShopItem(${item.id})" style="background:var(--error);">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        },
+
+        addShopItem() {
+            const name = document.getElementById('newShopName').value.trim();
+            const cost = parseInt(document.getElementById('newShopCost').value);
+            if (!name || isNaN(cost)) { alert('Enter valid name and cost'); return; }
+            fetch('api.php?action=add_shop_item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, cost })
+            }).then(() => {
+                this.loadData().then(() => this.renderShopItems());
+                document.getElementById('newShopName').value = '';
+                document.getElementById('newShopCost').value = '10';
+                alert('✅ Shop item added');
+            }).catch(e => alert('Failed'));
+        },
+
+        editShopItem(id) {
+            const item = this.shopItems.find(i => i.id == id);
+            if (!item) return;
+            this.editingShopId = id;
+            document.getElementById('editShopName').value = item.name;
+            document.getElementById('editShopCost').value = item.cost;
+            document.getElementById('editShopModal').classList.remove('hidden');
+        },
+        closeShopModal() {
+            document.getElementById('editShopModal').classList.add('hidden');
+            this.editingShopId = null;
+        },
+        async saveShopEdit() {
+            if (!this.editingShopId) return;
+            const name = document.getElementById('editShopName').value.trim();
+            const cost = parseInt(document.getElementById('editShopCost').value);
+            if (!name || isNaN(cost)) return;
+            await fetch('api.php?action=update_shop_item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: this.editingShopId, name, cost })
+            });
+            await this.loadData();
+            this.renderShopItems();
+            this.closeShopModal();
+        },
+
+        removeShopItem(id) {
+            if (confirm('Remove this item?')) {
+                fetch(`api.php?action=delete_shop_item&id=${id}`, { method: 'DELETE' })
+                    .then(() => this.loadData().then(() => this.renderShopItems()));
+            }
+        },
+
+        async loadThemes() {
+            try {
+                const res = await fetch('data/themes.json?_=' + Date.now());
+                if (res.ok) {
+                    this.themesData = await res.json();
+                    this.renderThemePresets();
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        renderThemePresets() {
+            const container = document.getElementById('themePresets');
+            if (!container || !this.themesData) return;
+            const current = this.currentTheme || 'default';
+            container.innerHTML = '';
+            for (const t of this.themesData.themes) {
+                const card = document.createElement('div');
+                card.className = `theme-card ${current === t.id ? 'active' : ''}`;
+                card.innerHTML = `<div class="theme-name">${t.name}</div><div class="theme-colors"><div class="color-dot" style="background: var(--jade);"></div></div>`;
+                card.onclick = () => this.applyTheme(t.id);
+                container.appendChild(card);
+            }
+            const customCard = document.createElement('div');
+            customCard.className = `theme-card ${current === 'custom' ? 'active' : ''}`;
+            customCard.innerHTML = `<div class="theme-name">🎨 Custom</div><div class="theme-colors"><div class="color-dot" style="background: var(--accent);"></div></div>`;
+            customCard.onclick = () => {
+                document.getElementById('customThemeForm').style.display = 'block';
+                this.currentTheme = 'custom';
+                this.renderThemePresets();
+            };
+            container.appendChild(customCard);
+        },
+
+        async applyTheme(themeId) {
+            await fetch('api.php?action=set_theme', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme: themeId })
+            });
+            this.currentTheme = themeId;
+            localStorage.setItem('active_theme', themeId);
+            const link = document.getElementById('themeStylesheet');
+            if (link) {
+                const url = themeId === 'custom' ? 'css/custom-theme.css' : `css/theme-${themeId}.css`;
+                link.href = url + '?_=' + Date.now();
+            }
+            this.renderThemePresets();
+            document.getElementById('customThemeForm').style.display = 'none';
+        },
+
+        setupCustomTheme() {
+            document.getElementById('applyCustomBtn')?.addEventListener('click', async () => {
+                const colors = {
+                    '--jade': document.getElementById('customJade').value,
+                    '--jade-dark': document.getElementById('customJadeDark').value,
+                    '--olive': document.getElementById('customOlive').value,
+                    '--olive-light': document.getElementById('customOliveLight').value,
+                    '--dark-grey': document.getElementById('customDarkGrey').value,
+                    '--dark-grey-2': document.getElementById('customDarkGrey2').value,
+                    '--dark-grey-3': document.getElementById('customDarkGrey3').value,
+                    '--cream': document.getElementById('customCream').value,
+                    '--accent': document.getElementById('customAccent').value,
+                    '--success': document.getElementById('customSuccess').value,
+                    '--warning': document.getElementById('customWarning').value,
+                    '--error': document.getElementById('customError').value
+                };
+                if (await ThemeLoader.saveCustomTheme(colors)) {
+                    await this.applyTheme('custom');
+                    alert('✅ Custom theme applied');
+                } else alert('❌ Failed');
+            });
+            document.getElementById('saveCustomBtn')?.addEventListener('click', async () => {
+                const name = prompt('Theme name:', 'My Custom Theme');
+                if (!name) return;
+                const colors = {
+                    '--jade': document.getElementById('customJade').value,
+                    '--jade-dark': document.getElementById('customJadeDark').value,
+                    '--olive': document.getElementById('customOlive').value,
+                    '--olive-light': document.getElementById('customOliveLight').value,
+                    '--dark-grey': document.getElementById('customDarkGrey').value,
+                    '--dark-grey-2': document.getElementById('customDarkGrey2').value,
+                    '--dark-grey-3': document.getElementById('customDarkGrey3').value,
+                    '--cream': document.getElementById('customCream').value,
+                    '--accent': document.getElementById('customAccent').value,
+                    '--success': document.getElementById('customSuccess').value,
+                    '--warning': document.getElementById('customWarning').value,
+                    '--error': document.getElementById('customError').value
+                };
+                try {
+                    const res = await fetch('api.php?action=save_theme_preset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, colors })
+                    });
+                    if (res.ok) {
+                        alert(`✅ Theme "${name}" saved!`);
+                        await this.loadThemes();
+                        const data = await res.json();
+                        if (data.id) await this.applyTheme(data.id);
+                    } else alert('❌ Failed to save theme');
+                } catch(e) { alert('Error'); }
+            });
+        }
+    };
+    try {
+        manager.init();
+    } catch(e) {
+        var errorDiv = document.getElementById('errorDisplay');
+        errorDiv.style.display = 'block';
+        errorDiv.innerHTML = 'Init error: ' + e.message + ' stack: ' + e.stack;
+    }
+</script>
+<div class="notch-fix-bottom"></div>

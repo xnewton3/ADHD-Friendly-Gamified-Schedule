@@ -19,6 +19,19 @@
             link.href = 'css/' + themeFile + '?_=' + Date.now();
             document.head.appendChild(link);
         })();
+
+
+        (async function() {
+            try {
+                const res = await fetch('api.php?action=login_status');
+                const data = await res.json();
+                if (!data.verified) {
+                    window.location.href = 'index.html';
+                }
+            } catch(e) {
+                window.location.href = 'index.html';
+            }
+        })();
     </script>
     <script src="theme-loader.js"></script>
     <style>
