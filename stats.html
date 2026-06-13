@@ -31,15 +31,88 @@
         .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
         .stat-label { font-size: 0.75rem; color: var(--olive-light); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.25rem; }
         .stat-sub { font-size: 0.7rem; color: var(--success); margin-top: 0.25rem; }
-        .graph-container { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; margin-bottom: 2rem; }
-        .graph-container h2 { color: var(--jade); font-size: 1.25rem; margin-bottom: 1rem; }
+        .graph-container, .daily-log-container { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; margin-bottom: 2rem; }
+        .graph-container h2, .daily-log-container h2 { color: var(--jade); font-size: 1.25rem; margin-bottom: 1rem; }
         canvas { max-height: 300px; width: 100%; }
-        .recent-list { background: var(--dark-grey-2); border-radius: 12px; padding: 1rem; }
-        .recent-list h2 { color: var(--jade); font-size: 1.25rem; margin-bottom: 1rem; }
-        .recent-item { padding: 0.75rem; border-bottom: 1px solid var(--dark-grey-3); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-        .recent-date { font-size: 0.8rem; color: var(--olive-light); min-width: 100px; }
-        .recent-desc { flex: 1; font-size: 0.9rem; }
-        .recent-points { font-weight: 600; color: var(--success); }
+        .day-group { background: var(--dark-grey-3); border-radius: 10px; margin-bottom: 1rem; overflow: hidden; }
+        .day-header {
+            background: var(--jade-dark);
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .day-header-left {
+            flex: 1;
+            text-align: left;
+        }
+        .day-header-left h3 {
+            font-size: 1rem;
+            margin: 0;
+            color: var(--cream);
+            font-weight: 600;
+        }
+        .day-stats-center {
+            flex: 2;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: var(--olive-light);
+            flex-wrap: wrap;
+        }
+        .day-stats-center span {
+            white-space: nowrap;
+        }
+        .day-toggle {
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+            margin-left: 0.5rem;
+        }
+        .day-content { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .day-content.hidden { display: none; }
+        .quest-log-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--dark-grey-2);
+            border-radius: 8px;
+            border-left: 4px solid var(--olive);
+            flex-wrap: wrap;
+        }
+        .quest-log-item.completed {
+            background: color-mix(in srgb, var(--success) 10%, transparent);
+            border-left-color: var(--success);
+            opacity: 0.8;
+        }
+        .quest-status-icon { font-size: 1.1rem; min-width: 1.8rem; text-align: center; }
+        .quest-log-info { flex: 1; min-width: 150px; }
+        .quest-log-name { font-weight: 500; }
+        .quest-log-details { font-size: 0.7rem; color: var(--olive-light); }
+        .quest-type-tag {
+            font-size: 0.65rem;
+            background: var(--dark-grey-3);
+            padding: 0.2rem 0.5rem;
+            border-radius: 20px;
+            color: var(--olive-light);
+            border: 1px solid var(--dark-grey);
+            text-transform: lowercase;
+            font-weight: normal;
+            letter-spacing: 0.3px;
+        }
+        .quest-log-points {
+            background: var(--jade);
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
         .empty-state { text-align: center; color: var(--olive-light); padding: 2rem; }
         .error { color: #d62828; text-align: center; padding: 1rem; }
         .login-box { background: var(--dark-grey-2); border-radius: 12px; padding: 2rem; max-width: 400px; margin: 2rem auto; text-align: center; }
@@ -48,7 +121,13 @@
         .hidden { display: none; }
         @media (max-width: 600px) {
             .stats-grid { grid-template-columns: 1fr 1fr; }
-            .recent-item { flex-direction: column; align-items: flex-start; }
+            .day-header { flex-direction: column; align-items: stretch; }
+            .day-header-left, .day-stats-center, .day-toggle { text-align: center; flex: auto; }
+            .day-stats-center { justify-content: center; }
+            .day-toggle { margin-top: 0.25rem; margin-left: 0; }
+            .quest-log-item { flex-wrap: wrap; }
+            .quest-type-tag { order: 2; }
+            .quest-log-points { order: 3; }
         }
     </style>
 </head>
@@ -72,13 +151,15 @@
 
     <div id="statsSection" class="hidden">
         <div class="stats-grid" id="statsGrid"></div>
+
         <div class="graph-container">
             <h2>📈 Daily Points (Last 30 Days)</h2>
             <canvas id="activityChart" width="400" height="200"></canvas>
         </div>
-        <div class="recent-list">
-            <h2>📋 Recent Activity (Last 30 days)</h2>
-            <div id="recentList"></div>
+
+        <div class="daily-log-container">
+            <h2>📋 Daily Quest Log (Last 30 Days)</h2>
+            <div id="dailyLogContainer">Loading...</div>
         </div>
     </div>
 </div>
@@ -88,28 +169,43 @@
         accessCode: null,
         chart: null,
         historyData: [],
+        quests: [],
         loginExpiryDays: 30,
 
-        // Normalize any date string to YYYY-MM-DD
-        normalizeDate(dateStr) {
-            if (!dateStr) return null;
-            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-            const parsed = new Date(dateStr);
-            if (!isNaN(parsed.getTime())) {
-                return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`;
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            let d = new Date(dateStr);
+            if (isNaN(d.getTime())) {
+                const parts = dateStr.split('-');
+                if (parts.length === 3) {
+                    d = new Date(Date.UTC(parts[0], parts[1]-1, parts[2]));
+                }
             }
-            return dateStr;
+            if (isNaN(d.getTime())) return dateStr;
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${weekdays[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2,'0')} ${d.getUTCFullYear()}`;
         },
 
-        ymd(date) {
-            return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+        getTodayUTC() {
+            const now = new Date();
+            return `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-${String(now.getUTCDate()).padStart(2,'0')}`;
         },
 
-        getCSSColor(varName) {
-            return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || '#4a7c59';
+        getDateNDaysAgoUTC(daysAgo) {
+            const d = new Date();
+            d.setUTCDate(d.getUTCDate() - daysAgo);
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
         },
 
-        // Check if user has a valid saved login (timestamp in localStorage)
+        daysBetween(date1Str, date2Str) {
+            const [y1, m1, d1] = date1Str.split('-').map(Number);
+            const [y2, m2, d2] = date2Str.split('-').map(Number);
+            const ts1 = Date.UTC(y1, m1-1, d1);
+            const ts2 = Date.UTC(y2, m2-1, d2);
+            return Math.floor((ts1 - ts2) / (1000 * 60 * 60 * 24));
+        },
+
         hasValidLogin() {
             const saved = localStorage.getItem('stats_authenticated');
             if (!saved) return false;
@@ -117,49 +213,54 @@
                 const data = JSON.parse(saved);
                 const expiry = data.timestamp + (this.loginExpiryDays * 24 * 60 * 60 * 1000);
                 return Date.now() < expiry;
-            } catch(e) {
-                return false;
-            }
+            } catch(e) { return false; }
         },
+        saveLogin() { localStorage.setItem('stats_authenticated', JSON.stringify({ timestamp: Date.now() })); },
+        clearLogin() { localStorage.removeItem('stats_authenticated'); },
 
-        // Save login flag with current timestamp
-        saveLogin() {
-            localStorage.setItem('stats_authenticated', JSON.stringify({
-                timestamp: Date.now()
-            }));
-        },
-
-        // Clear saved login (logout)
-        clearLogin() {
-            localStorage.removeItem('stats_authenticated');
-        },
-
+        // Fetch the access code from server (no header needed – public endpoint)
         async fetchAccessCode() {
             try {
                 const res = await fetch('api.php?action=stats_access_code');
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 this.accessCode = data.code;
+                localStorage.setItem('stats_access_code', this.accessCode);
                 return true;
             } catch(e) {
-                console.error(e);
                 document.getElementById('loginError').innerHTML = '❌ Could not load access code. Try again.';
                 return false;
             }
         },
 
+        // Wrapper that adds the stats code header (only after accessCode is known)
+        async fetchWithStatsCode(endpoint, options = {}) {
+            if (!this.accessCode) {
+                // Try localStorage first
+                const saved = localStorage.getItem('stats_access_code');
+                if (saved) {
+                    this.accessCode = saved;
+                } else {
+                    // This should not happen if fetchAccessCode was called first
+                    throw new Error('Access code not loaded');
+                }
+            }
+            options.headers = options.headers || {};
+            options.headers['X-Stats-Access-Code'] = this.accessCode;
+            return fetch(endpoint, options);
+        },
+
         async checkAccess(bypassCache = false) {
             if (!bypassCache && this.hasValidLogin()) {
-                // Already logged in, just show stats
                 await this.showStatsSection();
                 return;
             }
-            if (this.accessCode === null) {
-                const ok = await this.fetchAccessCode();
-                if (!ok) return;
-            }
-            const code = document.getElementById('accessCode').value;
-            if (code === this.accessCode) {
+            // Ensure we have the code from the server
+            const ok = await this.fetchAccessCode();
+            if (!ok) return;
+
+            const enteredCode = document.getElementById('accessCode').value;
+            if (enteredCode === this.accessCode) {
                 this.saveLogin();
                 await this.showStatsSection();
             } else {
@@ -171,38 +272,56 @@
             document.getElementById('loginSection').classList.add('hidden');
             document.getElementById('statsSection').classList.remove('hidden');
             document.getElementById('statsHeader').style.display = 'flex';
-            await this.loadStats();
+            await this.loadData();
         },
 
-        logout() {
-            this.clearLogin();
-            // Reload page to reset to login screen
-            location.reload();
-        },
+        logout() { this.clearLogin(); location.reload(); },
 
-        async loadStats() {
+        async loadData() {
             try {
-                const res = await fetch('api.php?action=history');
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                this.historyData = data.history || [];
-                this.historyData.forEach(h => { h.date = this.normalizeDate(h.date); });
-                console.log(`Loaded ${this.historyData.length} entries`);
+                // Now accessCode is set, we can use fetchWithStatsCode
+                const histRes = await this.fetchWithStatsCode('api.php?action=history');
+                if (!histRes.ok) throw new Error('Failed history');
+                const histData = await histRes.json();
+                this.historyData = histData.history || [];
+
+                const mainRes = await this.fetchWithStatsCode('api.php');
+                if (!mainRes.ok) throw new Error('Failed quests');
+                const mainData = await mainRes.json();
+                this.quests = mainData.quests || [];
+
+                this.quests = this.quests.map(q => {
+                    if (q.days_visible && typeof q.days_visible === 'string') {
+                        try { q.days_visible = JSON.parse(q.days_visible); } catch(e) { q.days_visible = null; }
+                    }
+                    if (q.specific_dates && typeof q.specific_dates === 'string') {
+                        try { q.specific_dates = JSON.parse(q.specific_dates); } catch(e) { q.specific_dates = null; }
+                    }
+                    if (!q.days_visible && q.schedule && !q.schedule.includes('/') && !q.schedule.includes('every other') && !q.schedule.includes('&')) {
+                        const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                        const scheduleDay = q.schedule.charAt(0).toUpperCase() + q.schedule.slice(1).toLowerCase();
+                        if (dayNames.includes(scheduleDay)) {
+                            q.days_visible = [scheduleDay];
+                            q.schedule = 'Daily';
+                        }
+                    }
+                    return q;
+                });
 
                 const statsData = this.computeStats(this.historyData);
                 this.renderStats(statsData);
                 this.renderActivityGraph(this.historyData);
-                this.renderRecentActivity(this.historyData);
+                await this.renderDailyQuestLog();
             } catch(e) {
                 console.error(e);
-                document.getElementById('statsGrid').innerHTML = '<div class="error">❌ Failed to load statistics</div>';
+                document.getElementById('statsGrid').innerHTML = '<div class="error">❌ Failed to load data</div>';
             }
         },
 
         computeStats(history) {
             const totalEarned = history.filter(h => h.points > 0).reduce((s, h) => s + h.points, 0);
             const currentPoints = history.reduce((s, h) => s + h.points, 0);
-            const todayStr = this.ymd(new Date());
+            const todayStr = this.getTodayUTC();
             const todayPoints = history.filter(h => h.date === todayStr && h.points > 0).reduce((s, h) => s + h.points, 0);
             const totalRewards = history.filter(h => h.type === 'reward_redeem').length;
             const latestReward = history.filter(h => h.type === 'reward_redeem').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -212,14 +331,23 @@
         },
 
         calculateStreak(history) {
-            const dates = [...new Set(history.filter(h => h.type === 'quest_complete').map(h => h.date))];
+            const normaliseDate = (dateStr) => {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+                const d = new Date(dateStr);
+                if (!isNaN(d.getTime())) {
+                    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+                }
+                return null;
+            };
+            const dates = [...new Set(history.filter(h => h.type === 'quest_complete')
+                .map(h => normaliseDate(h.date))
+                .filter(d => d))];
             if (!dates.length) return 0;
             dates.sort().reverse();
-            let streak = 1, current = new Date(dates[0]);
+            let streak = 1;
             for (let i = 1; i < dates.length; i++) {
-                const prev = new Date(dates[i]);
-                const diff = (current - prev) / (1000*60*60*24);
-                if (diff === 1) { streak++; current = prev; }
+                const diff = this.daysBetween(dates[i-1], dates[i]);
+                if (diff === 1) streak++;
                 else break;
             }
             return streak;
@@ -227,7 +355,7 @@
 
         renderStats(stats) {
             const latestRewardText = stats.latestReward ?
-                `${stats.latestReward.description.split('Redeemed ')[1] || 'Reward'} on ${new Date(stats.latestReward.date).toDateString()}` :
+                `${stats.latestReward.description.split('Redeemed ')[1] || 'Reward'} on ${this.formatDate(stats.latestReward.date)}` :
                 'None yet';
             document.getElementById('statsGrid').innerHTML = `
                 <div class="stat-card"><div class="stat-value">${stats.activeDays}</div><div class="stat-label">Days Active</div></div>
@@ -241,11 +369,8 @@
 
         renderActivityGraph(history) {
             const pointsByDate = new Map();
-            const today = new Date();
             for (let i = 0; i < 30; i++) {
-                const d = new Date(today);
-                d.setDate(today.getDate() - i);
-                const key = this.ymd(d);
+                const key = this.getDateNDaysAgoUTC(i);
                 pointsByDate.set(key, 0);
             }
             history.forEach(h => {
@@ -253,22 +378,21 @@
                     pointsByDate.set(h.date, pointsByDate.get(h.date) + h.points);
                 }
             });
-
             const labels = Array.from(pointsByDate.keys()).reverse();
             const dataPoints = Array.from(pointsByDate.values()).reverse();
 
             const ctx = document.getElementById('activityChart').getContext('2d');
             if (this.chart) this.chart.destroy();
 
-            const barColor = this.getCSSColor('--success') || '#52b788';
-            const borderColor = this.getCSSColor('--jade') || '#4a7c59';
-            const textColor = this.getCSSColor('--olive-light') || '#8a9968';
-            const gridColor = this.getCSSColor('--dark-grey-3') || '#3a3a3a';
+            const barColor = getComputedStyle(document.documentElement).getPropertyValue('--success').trim() || '#52b788';
+            const borderColor = getComputedStyle(document.documentElement).getPropertyValue('--jade').trim() || '#4a7c59';
+            const textColor = getComputedStyle(document.documentElement).getPropertyValue('--olive-light').trim() || '#8a9968';
+            const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--dark-grey-3').trim() || '#3a3a3a';
 
             this.chart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: labels.map(d => d.slice(5)),
+                    labels: labels.map(d => this.formatDate(d)),
                     datasets: [{
                         label: 'Points Earned',
                         data: dataPoints,
@@ -286,56 +410,339 @@
                         tooltip: { callbacks: { label: (ctx) => `${ctx.raw} points` } }
                     },
                     scales: {
-                        x: { ticks: { color: textColor, maxRotation: 45, autoSkip: true, maxTicksLimit: 10 } },
+                        x: { ticks: { color: textColor, maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } },
                         y: { ticks: { color: textColor, stepSize: 1 }, grid: { color: gridColor } }
                     }
                 }
             });
         },
 
-        renderRecentActivity(history) {
-            const container = document.getElementById('recentList');
-            if (!history.length) {
-                container.innerHTML = '<div class="empty-state">📭 No activity yet.</div>';
+        matchesDatePattern(pattern, date) {
+            if (!pattern) return false;
+            if (pattern === '&&/&&/&&&&') return true;
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const year = date.getUTCFullYear();
+            const parts = pattern.split('/');
+            if (parts.length !== 3) return false;
+            const matchDay = parts[0] === '&&' || parts[0] === day;
+            const matchMonth = parts[1] === '&&' || parts[1] === month;
+            const matchYear = parts[2] === '&&&&' || parts[2] === year.toString();
+            return matchDay && matchMonth && matchYear;
+        },
+
+        isSpecificDateMatch(quest, date) {
+            if (quest.specific_dates && quest.specific_dates.length > 0) {
+                for (const pattern of quest.specific_dates) {
+                    if (this.matchesDatePattern(pattern, date)) return true;
+                }
+            }
+            return false;
+        },
+
+        isBiWeeklyMatch(quest, date) {
+            if (!quest.schedule || !quest.schedule.toLowerCase().includes('every other')) return false;
+            const startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+            const pastDays = (date - startOfYear) / 86400000;
+            const weekNumber = Math.ceil((pastDays + startOfYear.getUTCDay() + 1) / 7);
+            const scheduleLower = quest.schedule.toLowerCase();
+            if (scheduleLower.includes('even') && weekNumber % 2 === 0) return true;
+            if (scheduleLower.includes('odd') && weekNumber % 2 === 1) return true;
+            return false;
+        },
+
+        getTargetWeekdayFromSchedule(schedule) {
+            const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            for (const day of weekdays) {
+                if (schedule.toLowerCase().includes(day.toLowerCase())) return day;
+            }
+            return null;
+        },
+
+        isNthWeekdayMatch(quest, date) {
+            if (!quest.schedule) return false;
+
+            const targetDay = this.getTargetWeekdayFromSchedule(quest.schedule);
+            if (!targetDay) return false;
+
+            const todayName = date.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+            if (todayName !== targetDay) return false;
+
+            const dayOfMonth = date.getUTCDate();
+            const firstOfMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+            const firstDayWeekday = firstOfMonth.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+            const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const targetIndex = weekdays.indexOf(targetDay);
+            const firstIndex = weekdays.indexOf(firstDayWeekday);
+            let occurrence = Math.ceil((dayOfMonth + (firstIndex - targetIndex)) / 7);
+            if (occurrence < 1) occurrence = 1;
+            if (occurrence > 5) occurrence = 5;
+
+            const scheduleLower = quest.schedule.toLowerCase();
+            if (scheduleLower.includes('2nd') && scheduleLower.includes('4th') && (occurrence === 2 || occurrence === 4)) return true;
+            if (scheduleLower.includes('1st') && scheduleLower.includes('3rd') && (occurrence === 1 || occurrence === 3)) return true;
+            if (scheduleLower.includes('1st') && occurrence === 1) return true;
+            if (scheduleLower.includes('2nd') && occurrence === 2) return true;
+            if (scheduleLower.includes('3rd') && occurrence === 3) return true;
+            if (scheduleLower.includes('4th') && occurrence === 4) return true;
+            if (scheduleLower.includes('5th') && occurrence === 5) return true;
+            return false;
+        },
+
+        isQuestVisibleOnDate(quest, date) {
+            if (quest.type === 'calendar') return false;
+
+            if (quest.specific_dates && Array.isArray(quest.specific_dates) && quest.specific_dates.length > 0) {
+                for (const pattern of quest.specific_dates) {
+                    if (this.matchesDatePattern(pattern, date)) return true;
+                }
+                return false;
+            }
+
+            if (quest.schedule && quest.schedule.includes('/')) {
+                const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
+                if (looksLikeDate && this.matchesDatePattern(quest.schedule, date)) return true;
+                if (looksLikeDate) return false;
+            }
+
+            if (this.isBiWeeklyMatch(quest, date)) return true;
+            if (this.isNthWeekdayMatch(quest, date)) return true;
+
+            if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
+                const utcWeekday = date.getUTCDay();
+                return (utcWeekday === 6 || utcWeekday === 0);
+            }
+
+            if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length) {
+                const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const utcWeekday = weekdayNames[date.getUTCDay()];
+                return quest.days_visible.includes(utcWeekday);
+            }
+
+            if (quest.schedule) {
+                const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
+                if (dayNames.includes(scheduleDay)) {
+                    const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                    const utcWeekday = weekdayNames[date.getUTCDay()];
+                    return scheduleDay === utcWeekday;
+                }
+            }
+
+            return true;
+        },
+
+        getVisibleQuestsForDate(dateStr) {
+            const targetDate = new Date(dateStr + 'T00:00:00Z');
+            if (isNaN(targetDate.getTime())) return [];
+
+            return this.quests.filter(quest => {
+                if (quest.type === 'calendar') {
+                    if (!quest.expires) return false;
+                    let expiryDate;
+                    if (quest.expires.includes('-')) {
+                        expiryDate = new Date(quest.expires + 'T00:00:00Z');
+                    } else {
+                        expiryDate = new Date(quest.expires);
+                        expiryDate = new Date(Date.UTC(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate()));
+                    }
+                    return expiryDate.getTime() === targetDate.getTime();
+                }
+                return this.isQuestVisibleOnDate(quest, targetDate);
+            });
+        },
+
+        sortQuestsByReminderTime(quests) {
+            return [...quests].sort((a, b) => {
+                const toMinutes = (t) => {
+                    if (!t) return -1;
+                    const m = t.match(/(\d+):(\d+)\s*(am|pm)/i);
+                    if (!m) return Infinity;
+                    let h = parseInt(m[1]);
+                    const min = parseInt(m[2]);
+                    const ap = m[3].toLowerCase();
+                    if (ap === 'pm' && h !== 12) h += 12;
+                    if (ap === 'am' && h === 12) h = 0;
+                    return h*60 + min;
+                };
+                const minsA = toMinutes(a.reminder_time);
+                const minsB = toMinutes(b.reminder_time);
+                if (minsA !== minsB) return minsA - minsB;
+                return a.name.localeCompare(b.name);
+            });
+        },
+
+        async renderDailyQuestLog() {
+            const container = document.getElementById('dailyLogContainer');
+            container.innerHTML = '<div class="empty-state">📅 Loading daily log...</div>';
+
+            const days = [];
+            for (let i = 29; i >= 0; i--) {
+                days.push(this.getDateNDaysAgoUTC(i));
+            }
+
+            const daysData = [];
+            for (const date of days) {
+                try {
+                    const compRes = await this.fetchWithStatsCode(`api.php?action=completions&date=${date}`);
+                    if (!compRes.ok) throw new Error(`Completions fail for ${date}`);
+                    const compData = await compRes.json();
+                    const completions = compData.completions || {};
+
+                    const visibleQuests = this.getVisibleQuestsForDate(date);
+
+                    const calendarQuests = [];
+                    const mainQuests = [];
+                    const sideQuests = [];
+                    for (const quest of visibleQuests) {
+                        const qWithStatus = {
+                            ...quest,
+                            completed: completions[quest.id]?.completed === true
+                        };
+                        if (quest.type === 'calendar') calendarQuests.push(qWithStatus);
+                        else if (quest.type === 'main') mainQuests.push(qWithStatus);
+                        else if (quest.type === 'side') sideQuests.push(qWithStatus);
+                    }
+
+                    const sortedCalendar = this.sortQuestsByReminderTime(calendarQuests);
+                    const sortedMain = this.sortQuestsByReminderTime(mainQuests);
+                    const sortedSide = this.sortQuestsByReminderTime(sideQuests);
+                    const allQuests = [...sortedCalendar, ...sortedMain, ...sortedSide];
+
+                    const otherItems = this.historyData.filter(h => h.date === date && (h.type === 'achievement' || h.type === 'reward_redeem' || h.type === 'bonus'));
+                    otherItems.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                    const dayPoints = this.historyData.filter(h => h.date === date && h.points > 0).reduce((s,h)=>s+h.points,0);
+                    const completedCount = allQuests.filter(q => q.completed).length;
+                    const rewardCount = this.historyData.filter(h => h.date === date && h.type === 'reward_redeem').length;
+                    const achievementCount = this.historyData.filter(h => h.date === date && h.type === 'achievement').length;
+
+                    daysData.push({ date, quests: allQuests, otherItems, totalPoints: dayPoints, completedCount, rewardCount, achievementCount });
+                } catch(e) {
+                    console.warn(`Failed for ${date}`, e);
+                    daysData.push({ date, quests: [], otherItems: [], totalPoints: 0, completedCount: 0, rewardCount: 0, achievementCount: 0, error: true });
+                }
+            }
+
+            daysData.reverse();
+
+            if (daysData.length === 0 || daysData.every(d => d.quests.length === 0 && d.otherItems.length === 0 && d.totalPoints === 0)) {
+                container.innerHTML = '<div class="empty-state">📭 No activity data available.</div>';
                 return;
             }
-            const grouped = {};
-            history.forEach(item => {
-                const date = item.date;
-                if (!grouped[date]) grouped[date] = [];
-                grouped[date].push(item);
-            });
-            const sortedDates = Object.keys(grouped).sort().reverse();
+
             let html = '';
-            for (const date of sortedDates.slice(0, 30)) {
-                const items = grouped[date];
-                const totalPoints = items.reduce((sum, i) => sum + (i.points > 0 ? i.points : 0), 0);
-                html += `<div style="margin-bottom:1rem;"><div style="background:var(--dark-grey-3); padding:0.5rem; border-radius:6px;"><strong>${new Date(date).toDateString()}</strong> <span style="float:right;">+${totalPoints} pts</span></div>`;
-                items.forEach(item => {
+            for (const day of daysData) {
+                const dateFormatted = this.formatDate(day.date);
+
+                const questsHtml = day.quests.map(quest => {
+                    const icon = quest.completed ? '✅' : '❌';
+                    const completedClass = quest.completed ? 'completed' : '';
+                    const reminderHtml = quest.reminder_time ? `⏰ ${quest.reminder_time}` : '';
+                    let typeLabel = '';
+                    if (quest.type === 'calendar') typeLabel = 'calendar';
+                    else if (quest.type === 'main') typeLabel = 'main';
+                    else if (quest.type === 'side') typeLabel = 'side';
+                    return `
+                        <div class="quest-log-item ${completedClass}">
+                            <div class="quest-status-icon">${icon}</div>
+                            <div class="quest-log-info">
+                                <div class="quest-log-name">${this.escapeHtml(quest.name)}</div>
+                                <div class="quest-log-details">${reminderHtml}</div>
+                            </div>
+                            <span class="quest-type-tag">${typeLabel}</span>
+                            <div class="quest-log-points">${quest.points || 1} pts</div>
+                        </div>
+                    `;
+                }).join('');
+
+                const otherHtml = day.otherItems.map(item => {
                     let icon = '';
-                    if (item.type === 'quest_complete') icon = '✅ ';
-                    else if (item.type === 'reward_redeem') icon = '🍫 ';
-                    else if (item.type === 'achievement') icon = '🏆 ';
-                    else if (item.type === 'bonus') icon = '✨ ';
-                    const pointsText = item.points > 0 ? `+${item.points}` : `${item.points}`;
-                    html += `<div class="recent-item"><div class="recent-desc">${icon}${item.description}</div><div class="recent-points">${pointsText} pts</div></div>`;
-                });
-                html += `</div>`;
+                    let typeLabel = '';
+                    let description = item.description;
+                    let points = item.points;
+                    if (item.type === 'achievement') {
+                        icon = '🏆';
+                        typeLabel = 'achievement';
+                    } else if (item.type === 'reward_redeem') {
+                        icon = '🍫';
+                        typeLabel = 'reward';
+                    } else if (item.type === 'bonus') {
+                        icon = '✨';
+                        typeLabel = 'bonus';
+                    } else {
+                        icon = '📝';
+                        typeLabel = 'other';
+                    }
+                    const pointsText = points > 0 ? `${points} pts` : `${points} pts`;
+                    return `
+                        <div class="quest-log-item" style="border-left-color: var(--accent);">
+                            <div class="quest-status-icon">${icon}</div>
+                            <div class="quest-log-info">
+                                <div class="quest-log-name">${this.escapeHtml(description)}</div>
+                                <div class="quest-log-details"></div>
+                            </div>
+                            <span class="quest-type-tag">${typeLabel}</span>
+                            <div class="quest-log-points">${pointsText}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                const noContentHtml = (day.quests.length === 0 && day.otherItems.length === 0) ? '<div class="empty-state">✨ No activity this day.</div>' : '';
+
+                html += `
+                    <div class="day-group">
+                        <div class="day-header" onclick="stats.toggleDay(this)">
+                            <div class="day-header-left">
+                                <h3>${dateFormatted}</h3>
+                            </div>
+                            <div class="day-stats-center">
+                                <span>✅ ${day.completedCount}</span>
+                                <span>⭐️ +${day.totalPoints}</span>
+                                <span>🪙 ${day.rewardCount}</span>
+                                <span>🔔 ${day.achievementCount}</span>
+                            </div>
+                            <div class="day-toggle">▼</div>
+                        </div>
+                        <div class="day-content">
+                            ${questsHtml}
+                            ${otherHtml}
+                            ${noContentHtml}
+                        </div>
+                    </div>
+                `;
             }
             container.innerHTML = html;
         },
 
-        // Auto-check login on page load
+        toggleDay(header) {
+            const content = header.nextElementSibling;
+            const toggle = header.querySelector('.day-toggle');
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                toggle.textContent = '▼';
+            } else {
+                content.classList.add('hidden');
+                toggle.textContent = '▶︎';
+            }
+        },
+
+        escapeHtml(str) {
+            return String(str || '').replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        },
+
         init() {
             if (this.hasValidLogin()) {
-                // Immediately show stats without prompting
                 this.showStatsSection();
             }
-            // else login form remains visible
         }
     };
 
-    // Start the page: check for existing login
     stats.init();
 </script>
 </body>

@@ -16,7 +16,6 @@
         (function() {
             var savedTheme = localStorage.getItem('active_theme') || 'default';
             var themeFile = (savedTheme === 'custom') ? 'custom-theme.css' : 'theme-' + savedTheme + '.css';
-            // Use a random number + timestamp to force new request every time
             var bust = Date.now() + Math.random();
             var link = document.createElement('link');
             link.rel = 'stylesheet';
@@ -90,7 +89,8 @@
         .sidebar-card.shop { padding: 0; }
         .sidebar-card h2 { margin: 0; font-size: 1.125rem; color: var(--jade); }
         .point-stat { font-size: 2rem; font-weight: 700; color: var(--accent); margin: 0.5rem 0; text-align: center; }
-        .today-points-sup { font-size: 0.9rem; font-weight: 600; color: var(--success); vertical-align: super; margin-left: 2px; }
+        .bonus-points-sub { font-size: 0.9rem; font-weight: 600; color: var(--warning); vertical-align: sub; margin: 0px 0px 0px -5px; }
+        .today-points-sup { font-size: 0.9rem; font-weight: 600; color: var(--success); vertical-align: super; margin: 0px 0px 0px -26.5px; }
         .shop-header { padding: 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .shop-header h2 { margin: 0; font-size: 1.125rem; }
         .shop-items { margin: 1rem; display: flex; flex-direction: column; gap: 0.75rem; max-height: 300px; overflow-y: auto; }
@@ -140,8 +140,35 @@
             background: var(--olive-light);
             transform: translateY(-2px);
         }
+        .pill {
+            display: inline-block;
+            background: var(--jade);
+            color: var(--dark-grey);
+            border-radius: 12px;
+            border: 1px solid var(--jade);
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .bonus-star {
+            background: color-mix(in srgb, var(--warning) 10%, transparent);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+        }
         @media (max-width: 768px) { .logout-btn-desktop { display: none; } .logout-btn-mobile { display: inline-block; } }
         @media (min-width: 769px) { .logout-btn-mobile { display: none; } .logout-btn-desktop { display: inline-block; } }
+        input[type="password"] {
+            background: var(--dark-grey-3);
+            border: 1px solid var(--jade);
+            color: var(--cream);
+            border-radius: 6px;
+            padding: 0.75rem;
+            width: 100%;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -150,9 +177,10 @@
 
 <div id="authModal" class="auth-modal">
     <div class="auth-box">
-        <h1>🎮 Quest Tracker</h1>
-        <p id="authSubtitle">Player 1</p>
-        <div class="auth-buttons" id="authButtons"></div>
+        <h1>🔐 Quest Tracker</h1>
+        <p>Enter password to continue</p>
+        <input type="password" id="loginPassword" placeholder="Password">
+        <button onclick="app.login()">Login</button>
         <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--dark-grey-3);">
             <button onclick="window.location.href='stats.html'" class="secondary" style="width: 100%;">📊 View Stats</button>
         </div>
@@ -184,7 +212,11 @@
         <div class="sidebar">
             <div class="sidebar-card">
                 <h2>⭐ Points Balance</h2>
-                <div class="point-stat"><span id="displayTotalPoints">0</span><sup id="displayTodayPoints" class="today-points-sup"></sup></div>
+                <div class="point-stat" style="position: relative; display: inline-block; text-align: center; width: 100%;">
+                    <span id="displayTotalPoints">0</span>
+                    <sub id="displayTodayBonusPoints" class="bonus-points-sub">+0</sub>
+                    <sup id="displayTodayPoints" class="today-points-sup">+0</sup>
+                </div>
             </div>
             <div class="sidebar-card shop">
                 <div class="shop-header" onclick="app.toggleShop()">
@@ -219,72 +251,20 @@
                 console.log('ServiceWorker unregistered');
             }
         });
-        // Also clear caches
         caches.keys().then(function(names) {
             for (let name of names) caches.delete(name);
         });
     }
-    if (localStorage.getItem('app_version') !== '4.0') {
+    if (localStorage.getItem('app_version') !== '4.1') {
         localStorage.clear();
-        localStorage.setItem('app_version', '4.0');
+        localStorage.setItem('app_version', '4.1');
         location.reload(true);
     }
 </script>
 
 <script>
     // ============================================
-    // WEBAUTHN HELPER - INLINED
-    // ============================================
-    const WebAuthnHelper = (() => {
-        const STORE_KEY = 'webauthn_credential';
-        const bufToBase64url = (buf) => {
-            return btoa(String.fromCharCode(...new Uint8Array(buf)))
-                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        };
-        const isSupported = () => {
-            return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create && navigator.credentials.get);
-        };
-        const register = async (username = 'Player 1') => {
-            if (!isSupported()) return { success: false, error: 'WebAuthn not supported.' };
-            const userId = crypto.getRandomValues(new Uint8Array(16));
-            const challenge = crypto.getRandomValues(new Uint8Array(32));
-            const publicKeyOptions = {
-                challenge, rp: { name: 'Quest Tracker', id: window.location.hostname },
-                user: { id: userId, name: username, displayName: username },
-                pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
-                authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
-                timeout: 60000, attestation: 'none'
-            };
-            try {
-                const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
-                const credentialId = bufToBase64url(credential.rawId);
-                const userIdB64 = bufToBase64url(userId);
-                localStorage.setItem(STORE_KEY, JSON.stringify({ credentialId, userId: userIdB64, registeredAt: new Date().toISOString() }));
-                return { success: true, credentialId, userId: userIdB64 };
-            } catch (err) { return { success: false, error: err.message }; }
-        };
-        const authenticate = async () => {
-            if (!isSupported()) return { success: false, error: 'WebAuthn not supported.' };
-            const challenge = crypto.getRandomValues(new Uint8Array(32));
-            try {
-                await navigator.credentials.get({ publicKey: { challenge, rpId: window.location.hostname, userVerification: 'required', timeout: 60000 } });
-                return { success: true };
-            } catch (err) { return { success: false, error: err.message }; }
-        };
-        const authenticateQR = async () => {
-            if (!isSupported()) return { success: false, error: 'WebAuthn not supported.' };
-            const challenge = crypto.getRandomValues(new Uint8Array(32));
-            try {
-                await navigator.credentials.get({ publicKey: { challenge, rpId: window.location.hostname, userVerification: 'required', mediation: 'conditional', timeout: 120000 } });
-                return { success: true };
-            } catch (err) { return { success: false, error: err.message }; }
-        };
-        const reset = () => localStorage.removeItem(STORE_KEY);
-        return { isSupported, register, authenticate, authenticateQR, reset };
-    })();
-
-    // ============================================
-    // MAIN APP
+    // MAIN APP – Password based login
     // ============================================
     const app = {
         userData: null,
@@ -300,6 +280,7 @@
         lastToggledState: null,
         totalPoints: 0,
         todayPoints: 0,
+        todayBonusPoints: 0,
 
         hashCode(str) {
             let hash = 0;
@@ -312,196 +293,216 @@
         },
 
         async init() {
-            await this.loadData();
-            await this.checkPasskeyRegistration();
-            this.startReminderChecker();
-        },
-
-        async saveData() {
-            if (!this.userData) return;
-
-            const dataToSave = {
-                user: this.userData,
-                quests: this.quests,
-                history: this.history,
-                passkeyRegistered: this.passkeyRegistered
-            };
-
-            localStorage.setItem('questTrackerData', JSON.stringify(dataToSave));
-
-            try {
-                await fetch('api.php', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(dataToSave)
-                });
-            } catch(e) {
-                console.warn('Could not save to server:', e);
-            }
-        },
-
-        addToHistory(type, description, points) {
-            const today = new Date().toDateString();
-            const playerName = this.userData?.name || 'Player 1';
-
-            let formattedDescription = description;
-            if (type === 'reward_redeem' && !description.startsWith(playerName)) {
-                formattedDescription = `${playerName} ${description}`;
-            } else if (type === 'quest_complete' && !description.includes('Completed quest:')) {
-                formattedDescription = `Completed quest: ${description}`;
-            } else if (type === 'bonus') {
-                formattedDescription = description;
-            }
-
-            const entry = {
-                type: type,
-                description: formattedDescription,
-                points: points,
-                date: today,
-                timestamp: new Date().toISOString()
-            };
-
-            this.history.push(entry);
-
-            fetch('api.php?action=history', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entries: [entry] })
-            }).catch(e => console.warn('Could not save to server:', e));
-
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            this.history = this.history.filter(h => new Date(h.timestamp) > thirtyDaysAgo);
-            this.saveData();
-        },
-
-        async checkDailyReset() {
-            const now = new Date();
-            // If current time is before 3am, treat "today" as yesterday for reset purposes
-            const resetHour = 3; // 3am
-            let today = new Date(now);
-            if (now.getHours() < resetHour) {
-                today.setDate(today.getDate() - 1);
-            }
-            const todayStr = today.toDateString();
-
-            if (this.userData.lastReset !== todayStr) {
-                const yesterday = new Date(today);
-                yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayStr = yesterday.toISOString().slice(0,10);
-
-                // Fetch yesterday's completions from the database
-                let yesterdayCompletions = {};
-                try {
-                    const res = await fetch(`api.php?action=completions&date=${yesterdayStr}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        yesterdayCompletions = data.completions || {};
-                    }
-                } catch(e) {
-                    console.warn('Could not load yesterday\'s completions:', e);
-                }
-
-                // Helper function: check if a quest was due on a specific date
-                const isQuestDueOnDate = (quest, date) => {
-                    if (quest.type === 'calendar') {
-                        const expiry = new Date(quest.expires);
-                        expiry.setHours(0,0,0,0);
-                        const d = new Date(date);
-                        d.setHours(0,0,0,0);
-                        return expiry.getTime() === d.getTime();
-                    }
-
-                    // Specific dates
-                    if (quest.specific_dates && quest.specific_dates.length) {
-                        for (const pattern of quest.specific_dates) {
-                            if (this.matchesDatePattern(pattern, date)) return true;
-                        }
-                        return false;
-                    }
-
-                    // Bi-weekly
-                    if (quest.schedule && quest.schedule.toLowerCase().includes('every other')) {
-                        return this.isBiWeeklyMatch(quest, date);
-                    }
-
-                    // Nth weekday
-                    if (this.isNthWeekdayMatch(quest, date)) return true;
-
-                    // Every weekend
-                    if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
-                        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-                        return (dayName === 'Saturday' || dayName === 'Sunday');
-                    }
-
-                    // Days visible array
-                    if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length) {
-                        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-                        return quest.days_visible.includes(dayName);
-                    }
-
-                    // Single weekday name in schedule
-                    if (quest.schedule) {
-                        const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-                        const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
-                        if (dayNames.includes(scheduleDay)) {
-                            const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-                            return scheduleDay === dayName;
-                        }
-                    }
-
-                    // Date pattern in schedule
-                    if (quest.schedule && quest.schedule.includes('/')) {
-                        if (this.matchesDatePattern(quest.schedule, date)) return true;
-                    }
-
-                    // Default: daily quest
-                    return true;
-                };
-
-                // Process each quest
-                const keepQuests = [];
-                for (const quest of this.quests) {
-                    if (quest.type === 'calendar') {
-                        keepQuests.push(quest);
-                        continue;
-                    }
-
-                    const isOneTime = quest.schedule === 'One-time';
-                    if (isOneTime && (quest.completed || yesterdayCompletions[quest.id]?.completed)) {
-                        console.log(`🗑️ Removing completed one-time quest: ${quest.name}`);
-                        continue; // skip adding to keepQuests
-                    }
-
-                    const wasDue = isQuestDueOnDate(quest, yesterday);
-                    const wasCompleted = yesterdayCompletions[quest.id]?.completed === true;
-
-                    if (wasDue && !wasCompleted) {
-                        quest.missed = true;
-                        quest.missedDate = yesterday.toDateString();
-                        console.log(`❌ Missed: ${quest.name}`);
-                    } else {
-                        quest.missed = false;
-                    }
-
-                    keepQuests.push(quest);
-                }
-
-                // Remove expired calendar quests
-                this.quests = keepQuests.filter(quest => {
-                    if (quest.type === 'calendar' && new Date(quest.expires) < today) {
-                        console.log(`🗑️ Removing expired calendar quest: ${quest.name}`);
-                        return false;
-                    }
-                    return true;
-                });
-
-                this.userData.lastReset = todayStr;
-                this.saveData();
-                this.addBonusPointsForMissed();
-                this.syncCalendarFeeds();
-                await this.loadCompletions(); // reload today's completions
+            const loggedIn = await this.checkAuth();
+            if (loggedIn) {
+                await this.loadData();
+                this.startReminderChecker();
+                this.checkDailyReset();
+                this.loadAvatar();
                 this.render();
+                this.requestNotificationPermission();
+                this.syncCalendarFeeds();
+            }
+        },
+
+        async checkAuth() {
+            try {
+                const res = await fetch('api.php?action=login_status');
+                const data = await res.json();
+                if (data.verified) {
+                    this.isLoggedIn = true;
+                    this.showApp();
+                    return true;
+                } else {
+                    this.showLoginForm();
+                    return false;
+                }
+            } catch(e) {
+                console.warn('Auth check failed:', e);
+                this.showLoginForm();
+                return false;
+            }
+        },
+
+        async login() {
+            const password = document.getElementById('loginPassword').value;
+            if (!password) {
+                alert('Please enter the password');
+                return;
+            }
+            const btn = document.querySelector('#authModal button');
+            const originalText = btn.textContent;
+            btn.textContent = 'Verifying...';
+            try {
+                const res = await fetch('api.php?action=verify_password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.isLoggedIn = true;
+                    await this.loadData();
+                    this.showApp();
+                    this.startReminderChecker();
+                    this.checkDailyReset();
+                    this.loadAvatar();
+                    this.render();
+                    this.requestNotificationPermission();
+                    this.syncCalendarFeeds();
+                } else {
+                    alert('Invalid password');
+                }
+            } catch(e) {
+                alert('Login failed: ' + e.message);
+            } finally {
+                btn.textContent = originalText;
+            }
+        },
+
+        logout() {
+            if (confirm('Logout?')) {
+                fetch('api.php?action=logout', { method: 'POST' }).catch(e => console.warn);
+                this.isLoggedIn = false;
+                document.getElementById('appContainer').style.display = 'none';
+                document.getElementById('authModal').classList.remove('hidden');
+                document.getElementById('loginPassword').value = '';
+                if (this.reminderInterval) clearInterval(this.reminderInterval);
+            }
+        },
+
+        showLoginForm() {
+            document.getElementById('authModal').classList.remove('hidden');
+            document.getElementById('appContainer').style.display = 'none';
+        },
+
+        showApp() {
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('appContainer').style.display = 'block';
+        },
+
+        async loadData() {
+            try {
+                const res = await fetch('api.php');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.userData = data.user;
+                    this.settings = data.settings;
+                    this.quests = (data.quests || []).map(q => {
+                        if (q.days_visible && typeof q.days_visible === 'string') {
+                            try { q.days_visible = JSON.parse(q.days_visible); } catch(e) { q.days_visible = null; }
+                        }
+                        if (q.specific_dates && typeof q.specific_dates === 'string') {
+                            try { q.specific_dates = JSON.parse(q.specific_dates); } catch(e) { q.specific_dates = null; }
+                        }
+                        if (!q.days_visible && q.schedule && !q.schedule.includes('/') && !q.schedule.includes('every other') && !q.schedule.includes('&')) {
+                            const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                            const scheduleDay = q.schedule.charAt(0).toUpperCase() + q.schedule.slice(1).toLowerCase();
+                            if (dayNames.includes(scheduleDay)) {
+                                q.days_visible = [scheduleDay];
+                                q.schedule = 'Daily';
+                            }
+                        }
+                        return q;
+                    });
+                    this.shopItems = data.shopItems || [];
+                    this.calendarFeeds = data.calendarFeeds || [];
+                    await this.loadPoints();
+                    await this.loadTodayBonusPoints();
+                    await this.loadCompletions();
+                }
+            } catch(e) { console.warn(e); }
+        },
+
+        async loadPoints() {
+            try {
+                const res = await fetch('api.php?action=points');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.totalPoints = data.totalPoints || 0;
+                    this.todayPoints = data.todayPoints || 0;
+                }
+            } catch(e) { console.warn('Could not load points:', e); }
+        },
+
+        async loadTodayBonusPoints() {
+            try {
+                const res = await fetch('api.php?action=history');
+                if (res.ok) {
+                    const data = await res.json();
+                    const todayStr = new Date().toISOString().slice(0,10);
+                    const bonusTotal = data.history
+                        .filter(h => h.type === 'bonus' && h.date === todayStr)
+                        .reduce((sum, h) => sum + h.points, 0);
+                    this.todayBonusPoints = bonusTotal;
+                } else {
+                    this.todayBonusPoints = 0;
+                }
+            } catch(e) {
+                console.warn('Could not load bonus points:', e);
+                this.todayBonusPoints = 0;
+            }
+            const bonusTodayEl = document.getElementById('displayTodayBonusPoints');
+            if (bonusTodayEl) bonusTodayEl.textContent = `+${this.todayBonusPoints}`;
+        },
+
+        async loadCompletions() {
+            try {
+                const res = await fetch('api.php?action=completions');
+                if (res.ok) {
+                    const data = await res.json();
+                    const completions = data.completions || {};
+                    this.quests.forEach(quest => {
+                        quest.completed = completions[quest.id] ? completions[quest.id].completed : false;
+                    });
+                    await this.updateMissedFlags();
+                    this.render();
+                }
+            } catch(e) { console.error('Could not load completions:', e); }
+        },
+
+        async loadCompletionsForDate(date) {
+            try {
+                const res = await fetch(`api.php?action=completions&date=${date}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    return data.completions || {};
+                }
+            } catch(e) { console.warn(`Could not load completions for ${date}:`, e); }
+            return {};
+        },
+
+        async updateMissedFlags() {
+            const todayUTC = new Date();
+            todayUTC.setUTCHours(0, 0, 0, 0);
+            const yesterdayUTC = new Date(todayUTC);
+            yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
+            const yesterdayStr = yesterdayUTC.toISOString().slice(0,10);
+
+            let yesterdayCompletions = {};
+            try {
+                const res = await fetch(`api.php?action=completions&date=${yesterdayStr}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    yesterdayCompletions = data.completions || {};
+                }
+            } catch(e) { console.warn('Could not load yesterday\'s completions:', e); }
+
+            for (const quest of this.quests) {
+                if (quest.completed) {
+                    quest.missed = false;
+                    continue;
+                }
+                let wasDue = false;
+                if (quest.type === 'calendar') {
+                    const expiryDate = new Date(quest.expires);
+                    expiryDate.setUTCHours(0, 0, 0, 0);
+                    wasDue = expiryDate.getTime() === yesterdayUTC.getTime();
+                } else {
+                    wasDue = this.isQuestVisibleOnDate(quest, yesterdayUTC);
+                }
+                const wasCompleted = yesterdayCompletions[quest.id]?.completed === true;
+                quest.missed = wasDue && !wasCompleted;
             }
         },
 
@@ -511,11 +512,7 @@
         },
 
         checkNotificationSupport() {
-            if (!('Notification' in window)) {
-                console.log('This browser does not support notifications');
-                return false;
-            }
-            return true;
+            return 'Notification' in window;
         },
 
         requestNotificationPermission() {
@@ -542,7 +539,6 @@
             if (permission === 'granted') {
                 alert('✅ Notifications enabled!');
                 this.sendTestNotification();
-                localStorage.setItem('notifications_enabled', 'true');
             } else {
                 alert('❌ Notification permission denied');
             }
@@ -623,191 +619,6 @@
             alert(`↩️ Undid: ${quest.name}`);
         },
 
-        async loadData() {
-            try {
-                const res = await fetch('api.php');
-                if (res.ok) {
-                    const data = await res.json();
-                    this.userData = data.user;
-                    this.settings = data.settings;
-
-                    this.quests = (data.quests || []).map(q => {
-                        if (q.days_visible && typeof q.days_visible === 'string') {
-                            try {
-                                q.days_visible = JSON.parse(q.days_visible);
-                            } catch(e) {
-                                if (q.days_visible && q.days_visible !== 'null') {
-                                    q.days_visible = [q.days_visible];
-                                } else {
-                                    q.days_visible = null;
-                                }
-                            }
-                        }
-                        if (q.specific_dates && typeof q.specific_dates === 'string') {
-                            try {
-                                q.specific_dates = JSON.parse(q.specific_dates);
-                            } catch(e) { q.specific_dates = null; }
-                        }
-                        if (!q.days_visible && q.schedule && !q.schedule.includes('/') && !q.schedule.includes('every other') && !q.schedule.includes('&')) {
-                            const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-                            const scheduleDay = q.schedule.charAt(0).toUpperCase() + q.schedule.slice(1).toLowerCase();
-                            if (dayNames.includes(scheduleDay)) {
-                                q.days_visible = [scheduleDay];
-                                q.schedule = 'Daily';
-                            }
-                        }
-                        return q;
-                    });
-
-                    this.shopItems = data.shopItems || [];
-                    this.calendarFeeds = data.calendarFeeds || [];
-
-                    await this.loadPoints();
-                    await this.loadCompletions();
-
-                    return;
-                }
-            } catch (e) { console.warn(e); }
-        },
-
-        async loadPoints() {
-            try {
-                const res = await fetch('api.php?action=points');
-                if (res.ok) {
-                    const data = await res.json();
-                    this.totalPoints = data.totalPoints || 0;
-                    this.todayPoints = data.todayPoints || 0;
-                }
-            } catch(e) { console.warn('Could not load points:', e); }
-        },
-
-        async loadCompletions() {
-            try {
-                const res = await fetch('api.php?action=completions');
-                if (res.ok) {
-                    const data = await res.json();
-                    const completions = data.completions || {};
-                    this.quests.forEach(quest => {
-                        quest.completed = completions[quest.id] ? completions[quest.id].completed : false;
-                    });
-                    this.render();
-                } else {
-                    console.error('Completions fetch failed:', res.status);
-                }
-            } catch(e) {
-                console.error('Could not load completions:', e);
-            }
-        },
-
-        async loadCompletionsForDate(date) {
-            try {
-                const res = await fetch(`api.php?action=completions&date=${date}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    return data.completions || {};
-                }
-            } catch(e) {
-                console.warn(`Could not load completions for ${date}:`, e);
-            }
-            return {};
-        },
-
-        async checkPasskeyRegistration() {
-            const savedLoggedIn = localStorage.getItem('quest_logged_in') === 'true';
-            const savedUserId = localStorage.getItem('quest_user_id');
-            if (savedLoggedIn && savedUserId && this.userData && this.userData.id === savedUserId) {
-                this.isLoggedIn = true;
-                this.showApp();
-                return;
-            }
-            if (!WebAuthnHelper.isSupported()) {
-                document.getElementById('authSubtitle').textContent = 'Browser not supported';
-                document.getElementById('authButtons').innerHTML = '<p style="color:var(--error);">No WebAuthn support</p>';
-                document.getElementById('authModal').classList.remove('hidden');
-                return;
-            }
-            let serverRegistered = false;
-            try { const res = await fetch('api.php?action=passkey_status'); if (res.ok) serverRegistered = (await res.json()).registered === true; } catch(e) {}
-            if (!serverRegistered) this.showRegistration();
-            else this.showLogin();
-        },
-
-        showLogin() {
-            document.getElementById('authSubtitle').textContent = 'Login';
-            document.getElementById('authButtons').innerHTML = `<button onclick="app.passkeyLogin()">🔐 Log in with Passkey</button><button onclick="app.passkeyLoginQR()" class="secondary">📱 Use QR code</button>`;
-            document.getElementById('authModal').classList.remove('hidden');
-        },
-
-        showRegistration() {
-            document.getElementById('authSubtitle').textContent = 'Register';
-            document.getElementById('authButtons').innerHTML = `<button onclick="app.passkeyRegister()">🔐 Register with Passkey</button>`;
-            document.getElementById('authModal').classList.remove('hidden');
-        },
-
-        showApp() {
-            document.getElementById('authModal').classList.add('hidden');
-            document.getElementById('appContainer').style.display = 'block';
-            this.checkDailyReset();
-            this.loadAvatar();
-            this.render();
-            this.setSessionCookie();
-            localStorage.setItem('quest_logged_in', 'true');
-            if (this.userData) localStorage.setItem('quest_user_id', this.userData.id);
-            this.requestNotificationPermission();
-            this.syncCalendarFeeds();
-        },
-
-        async passkeyRegister() {
-            const secret = prompt('Enter the registration secret:');
-            if (!secret) return;
-            document.getElementById('authButtons').innerHTML = '<p style="color:var(--olive-light);">Creating passkey...</p>';
-            const result = await WebAuthnHelper.register('Player 1');
-            if (!result.success) { this.showRegistration(); alert('Failed: ' + result.error); return; }
-            try {
-                const res = await fetch('api.php?action=save_credential', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Register-Secret': secret }, body: JSON.stringify({ credentialId: result.credentialId }) });
-                if (!res.ok) throw new Error();
-            } catch(e) { alert('Server error'); WebAuthnHelper.reset(); this.showRegistration(); return; }
-            this.userData = { id: result.userId, name: 'Player 1' };
-            await this.loadData();
-            this.showApp();
-        },
-
-        async passkeyLogin() {
-            document.getElementById('authButtons').innerHTML = '<p style="color:var(--olive-light);">Waiting for passkey...</p>';
-            const result = await WebAuthnHelper.authenticate();
-            if (!result.success) { this.showLogin(); alert('Login failed: ' + result.error); return; }
-            this.isLoggedIn = true;
-            this.showApp();
-        },
-
-        async passkeyLoginQR() {
-            document.getElementById('authButtons').innerHTML = '<p style="color:var(--olive-light);">Waiting for QR passkey...</p>';
-            const result = await WebAuthnHelper.authenticateQR();
-            if (!result.success) { this.showLogin(); alert('Login failed: ' + result.error); return; }
-            this.isLoggedIn = true;
-            this.showApp();
-        },
-
-        logout() {
-            if (confirm('Logout?')) {
-                this.isLoggedIn = false;
-                document.cookie = 'quest_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                document.cookie = 'quest_logged_in=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                localStorage.removeItem('quest_logged_in');
-                localStorage.removeItem('quest_user_id');
-                document.getElementById('appContainer').style.display = 'none';
-                this.showLogin();
-            }
-        },
-
-        setSessionCookie() {
-            if (!this.userData?.id) return;
-            const expires = new Date();
-            expires.setDate(expires.getDate() + 7);
-            document.cookie = `quest_session=${this.userData.id}; expires=${expires.toUTCString()}; path=/; SameSite=Lax; Secure`;
-            document.cookie = `quest_logged_in=true; expires=${expires.toUTCString()}; path=/; SameSite=Lax; Secure`;
-        },
-
         matchesDatePattern(pattern, date) {
             if (!pattern || pattern === '&&/&&/&&&&') return true;
             const day = String(date.getDate()).padStart(2, '0');
@@ -833,9 +644,9 @@
 
         isBiWeeklyMatch(quest, customDate = null) {
             if (!quest.schedule || !quest.schedule.toLowerCase().includes('every other')) return false;
-            const today = customDate || new Date();
-            const startOfYear = new Date(today.getFullYear(), 0, 1);
-            const pastDaysOfYear = (today - startOfYear) / 86400000;
+            const date = customDate || new Date();
+            const startOfYear = new Date(date.getFullYear(), 0, 1);
+            const pastDaysOfYear = (date - startOfYear) / 86400000;
             const weekNumber = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
             const scheduleLower = quest.schedule.toLowerCase();
             if (scheduleLower.includes('even') && weekNumber % 2 === 0) return true;
@@ -846,32 +657,25 @@
         getTargetWeekdayFromSchedule(schedule) {
             const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
             for (const day of weekdays) {
-                if (schedule.toLowerCase().includes(day.toLowerCase())) {
-                    return day;
-                }
+                if (schedule.toLowerCase().includes(day.toLowerCase())) return day;
             }
             return null;
         },
 
         isNthWeekdayMatch(quest, customDate = null) {
             if (!quest.schedule) return false;
-
             const targetDay = this.getTargetWeekdayFromSchedule(quest.schedule);
             if (!targetDay) return false;
-
-            const today = customDate || new Date();
-            const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
-
+            const date = customDate || new Date();
+            const todayName = date.toLocaleDateString('en-US', { weekday: 'long' });
             if (todayName !== targetDay) return false;
-
-            const date = today.getDate();
-            const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const dayOfMonth = date.getDate();
+            const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
             const firstDayOfWeek = firstOfMonth.getDay();
             const targetDayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(targetDay);
-            let occurrence = Math.ceil((date + (firstDayOfWeek - targetDayIndex)) / 7);
+            let occurrence = Math.ceil((dayOfMonth + (firstDayOfWeek - targetDayIndex)) / 7);
             if (occurrence < 1) occurrence = 1;
             if (occurrence > 5) occurrence = 5;
-
             const scheduleLower = quest.schedule.toLowerCase();
             if (scheduleLower.includes('2nd') && scheduleLower.includes('4th') && (occurrence === 2 || occurrence === 4)) return true;
             if (scheduleLower.includes('1st') && scheduleLower.includes('3rd') && (occurrence === 1 || occurrence === 3)) return true;
@@ -880,7 +684,6 @@
             if (scheduleLower.includes('3rd') && occurrence === 3) return true;
             if (scheduleLower.includes('4th') && occurrence === 4) return true;
             if (scheduleLower.includes('5th') && occurrence === 5) return true;
-
             return false;
         },
 
@@ -892,24 +695,17 @@
                 expiryDate.setHours(0, 0, 0, 0);
                 return expiryDate.getTime() === today.getTime();
             }
-
             if (this.isSpecificDateMatch(quest)) return true;
-
             if (quest.schedule && quest.schedule.includes('/')) {
                 const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
-                if (looksLikeDate) {
-                    return this.matchesDatePattern(quest.schedule, new Date());
-                }
+                if (looksLikeDate) return this.matchesDatePattern(quest.schedule, new Date());
             }
-
             if (this.isBiWeeklyMatch(quest)) return true;
             if (this.isNthWeekdayMatch(quest)) return true;
-
             if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
                 const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
                 return (today === 'Saturday' || today === 'Sunday');
             }
-
             if (quest.days_visible !== null && quest.days_visible !== undefined) {
                 let daysVisible = quest.days_visible;
                 if (typeof daysVisible === 'string') {
@@ -920,7 +716,6 @@
                     return daysVisible.includes(today);
                 }
             }
-
             if (quest.schedule) {
                 const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
                 const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
@@ -929,116 +724,76 @@
                     return scheduleDay === today;
                 }
             }
-
             if (quest.schedule && (quest.schedule.includes('&') || quest.schedule.includes('every') || quest.schedule.includes('2nd') || quest.schedule.includes('1st'))) {
                 return false;
             }
-
             return true;
         },
 
-        wasVisibleYesterday(quest) {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            yesterday.setHours(0, 0, 0, 0);
-
-            // Calendar quests: visible if expiry equals yesterday
-            if (quest.type === 'calendar') {
-                const expiryDate = new Date(quest.expires);
-                expiryDate.setHours(0, 0, 0, 0);
-                return expiryDate.getTime() === yesterday.getTime();
+        isQuestVisibleOnDate(quest, date) {
+            if (quest.type === 'calendar') return false;
+            if (quest.specific_dates && Array.isArray(quest.specific_dates) && quest.specific_dates.length > 0) {
+                for (const pattern of quest.specific_dates) {
+                    if (this.matchesDatePattern(pattern, date)) return true;
+                }
+                return false;
             }
-
-            // Specific dates match (with custom date = yesterday)
-            if (this.isSpecificDateMatch(quest, yesterday)) return true;
-
-            // Date pattern in schedule (e.g., "03/08/&&&&")
             if (quest.schedule && quest.schedule.includes('/')) {
                 const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
-                if (looksLikeDate) {
-                    return this.matchesDatePattern(quest.schedule, yesterday);
-                }
+                if (looksLikeDate && this.matchesDatePattern(quest.schedule, date)) return true;
+                if (looksLikeDate) return false;
             }
-
-            // Bi-weekly (every other week)
-            if (this.isBiWeeklyMatch(quest, yesterday)) return true;
-
-            // Nth weekday (e.g., "2nd & 4th Saturday")
-            if (this.isNthWeekdayMatch(quest, yesterday)) return true;
-
-            // "Every weekend"
+            if (this.isBiWeeklyMatch(quest, date)) return true;
+            if (this.isNthWeekdayMatch(quest, date)) return true;
             if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
-                const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
-                return (yesterdayName === 'Saturday' || yesterdayName === 'Sunday');
+                const utcWeekday = date.getUTCDay();
+                return (utcWeekday === 6 || utcWeekday === 0);
             }
-
-            // Days visible array
-            if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length > 0) {
-                const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
-                return quest.days_visible.includes(yesterdayName);
+            if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length) {
+                const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const utcWeekday = weekdayNames[date.getUTCDay()];
+                return quest.days_visible.includes(utcWeekday);
             }
-
-            // Single weekday name in schedule (e.g., "Monday")
             if (quest.schedule) {
                 const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
                 const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
                 if (dayNames.includes(scheduleDay)) {
-                    const yesterdayName = yesterday.toLocaleDateString('en-US', { weekday: 'long' });
-                    return scheduleDay === yesterdayName;
+                    const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                    const utcWeekday = weekdayNames[date.getUTCDay()];
+                    return scheduleDay === utcWeekday;
                 }
             }
-
-            // If no schedule restrictions, it was visible yesterday (Daily quests)
-            // But only if it's not a complex schedule that didn't match above
-            if (!quest.schedule || quest.schedule === 'Daily') {
-                return true;
-            }
-
-            // Complex schedule that didn't match → not visible
-            return false;
+            return true;
         },
 
         async syncCalendarFeeds() {
             const calendarFeeds = this.calendarFeeds || [];
             if (calendarFeeds.length === 0) return;
-
-            // Get existing calendar quests as a Map by ID for quick lookup
             const existingMap = new Map();
-            this.quests.forEach(q => {
-                if (q.type === 'calendar') existingMap.set(q.id, q);
-            });
-
-            // Fetch new events from all feeds
+            this.quests.forEach(q => { if (q.type === 'calendar') existingMap.set(q.id, q); });
             const allEvents = [];
             for (const feed of calendarFeeds) {
                 try {
                     const events = await this.fetchCalendarEvents(feed.url);
                     allEvents.push(...events);
-                } catch(e) {
-                    console.warn('Failed to fetch calendar:', feed.url, e);
-                }
+                } catch(e) { console.warn('Failed to fetch calendar:', feed.url, e); }
             }
-
-            // Process each event: update existing quest or create new one
             const updatedCalendarQuests = [];
             for (const event of allEvents) {
                 const startDateStr = event.start.toDateString();
                 const questName = `📅 ${event.summary || 'Calendar Event'}`;
                 const stableId = `cal_${this.hashCode(`${questName}_${startDateStr}_${event.end ? event.end.toDateString() : startDateStr}`)}`;
-
                 const existing = existingMap.get(stableId);
                 if (existing) {
-                    // Update only mutable fields, keep the object (and its 'completed' flag)
                     existing.reminder_time = event.start ? this.formatTime12hr(event.start) : null;
                     existing.expires = startDateStr;
                     updatedCalendarQuests.push(existing);
                 } else {
-                    // Create new quest object (completed = false by default)
                     const newQuest = {
                         id: stableId,
                         name: questName,
                         type: 'calendar',
-                        points: 1,
+                        points: event.points || 1,
                         completed: false,
                         reminder_time: event.start ? this.formatTime12hr(event.start) : null,
                         expires: startDateStr,
@@ -1047,19 +802,12 @@
                     updatedCalendarQuests.push(newQuest);
                 }
             }
-
-            // Remove duplicate IDs (just in case)
             const uniqueMap = new Map();
-            for (const q of updatedCalendarQuests) {
-                uniqueMap.set(q.id, q);
-            }
+            for (const q of updatedCalendarQuests) uniqueMap.set(q.id, q);
             const unique = Array.from(uniqueMap.values());
-
-            // Merge with non-calendar quests
+            await this.saveCalendarQuests(unique);
             const regularQuests = this.quests.filter(q => q.type !== 'calendar');
             this.quests = [...regularQuests, ...unique];
-
-            // Re-apply today's completions to ensure checkmarks are correct
             await this.loadCompletions();
             this.render();
         },
@@ -1085,23 +833,19 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ quests: quests, lastUpdated: new Date().toISOString() })
                 });
-            } catch(e) {
-                console.warn('Could not save calendar quests:', e);
-            }
+            } catch(e) { console.warn('Could not save calendar quests:', e); }
         },
 
         parseICal(icalData) {
             const events = [];
             const lines = icalData.split(/\r?\n/);
             let currentEvent = null;
-
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i].trim();
                 while (lines[i+1] && lines[i+1].startsWith(' ')) {
                     line += lines[i+1].trim();
                     i++;
                 }
-
                 if (line === 'BEGIN:VEVENT') {
                     currentEvent = {};
                 } else if (line === 'END:VEVENT' && currentEvent && currentEvent.summary) {
@@ -1114,25 +858,24 @@
                     if (colonIndex === -1) continue;
                     const key = line.substring(0, colonIndex).split(';')[0];
                     let value = line.substring(colonIndex + 1);
-
                     if (key === 'SUMMARY') {
                         currentEvent.summary = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
                     } else if (key === 'DESCRIPTION') {
                         currentEvent.description = value.replace(/\\,/g, ',').replace(/\\n/g, '\n');
+                        const pointsMatch = currentEvent.description.match(/ical:(\d+)/i);
+                        if (pointsMatch) {
+                            currentEvent.points = parseInt(pointsMatch[1], 10);
+                        } else {
+                            currentEvent.points = 1;
+                        }
                     } else if (key === 'DTSTART') {
                         let dateStr = value;
-                        if (dateStr.includes(':')) {
-                            const parts = dateStr.split(':');
-                            dateStr = parts[parts.length - 1];
-                        }
+                        if (dateStr.includes(':')) dateStr = dateStr.split(':').pop();
                         const startDate = this.parseICalDate(dateStr);
                         if (startDate) currentEvent.start = startDate;
                     } else if (key === 'DTEND') {
                         let dateStr = value;
-                        if (dateStr.includes(':')) {
-                            const parts = dateStr.split(':');
-                            dateStr = parts[parts.length - 1];
-                        }
+                        if (dateStr.includes(':')) dateStr = dateStr.split(':').pop();
                         const endDate = this.parseICalDate(dateStr);
                         if (endDate) currentEvent.end = endDate;
                     } else if (key === 'RRULE') {
@@ -1142,24 +885,18 @@
                     }
                 }
             }
-
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const thirtyDaysLater = new Date(today);
             thirtyDaysLater.setDate(today.getDate() + 30);
             const expandedEvents = [];
-
             for (const event of events) {
                 if (!event.start) continue;
-
                 if (event.rrule && event.rrule.includes('FREQ=WEEKLY')) {
                     let currentStart = new Date(event.start);
                     const endDate = event.end ? new Date(event.end) : new Date(currentStart);
                     const duration = endDate - currentStart;
-
-                    while (currentStart < today) {
-                        currentStart.setDate(currentStart.getDate() + 7);
-                    }
+                    while (currentStart < today) currentStart.setDate(currentStart.getDate() + 7);
                     while (currentStart <= thirtyDaysLater) {
                         const occurrenceEnd = new Date(currentStart.getTime() + duration);
                         expandedEvents.push({
@@ -1175,7 +912,6 @@
                     expandedEvents.push(event);
                 }
             }
-
             const upcomingEvents = [];
             for (const event of expandedEvents) {
                 let eventDate = event.start;
@@ -1190,7 +926,6 @@
                     });
                 }
             }
-
             upcomingEvents.sort((a, b) => a.start - b.start);
             return upcomingEvents;
         },
@@ -1210,6 +945,173 @@
             return new Date(year, month, day, hour, minute, second);
         },
 
+        async checkDailyReset() {
+            const now = new Date();
+            const resetHour = 3;
+            let today = new Date(now);
+            if (now.getHours() < resetHour) today.setDate(today.getDate() - 1);
+            const todayStr = today.toDateString();
+            let lastReset = null;
+            try {
+                const res = await fetch('api.php?action=last_reset');
+                if (res.ok) {
+                    const data = await res.json();
+                    lastReset = data.lastReset;
+                }
+            } catch(e) { console.warn('Could not fetch last reset:', e); }
+            if (lastReset !== todayStr) {
+                console.log('🔄 Running daily reset...');
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayStr = yesterday.toISOString().slice(0,10);
+                let yesterdayCompletions = {};
+                try {
+                    const res = await fetch(`api.php?action=completions&date=${yesterdayStr}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        yesterdayCompletions = data.completions || {};
+                    }
+                } catch(e) { console.warn('Could not load yesterday\'s completions:', e); }
+                const isQuestDueOnDate = (quest, date) => {
+                    if (quest.type === 'calendar') {
+                        const expiry = new Date(quest.expires);
+                        expiry.setHours(0,0,0,0);
+                        const d = new Date(date);
+                        d.setHours(0,0,0,0);
+                        return expiry.getTime() === d.getTime();
+                    }
+                    if (quest.specific_dates && quest.specific_dates.length) {
+                        for (const pattern of quest.specific_dates) {
+                            if (this.matchesDatePattern(pattern, date)) return true;
+                        }
+                        return false;
+                    }
+                    if (quest.schedule && quest.schedule.toLowerCase().includes('every other')) return this.isBiWeeklyMatch(quest, date);
+                    if (this.isNthWeekdayMatch(quest, date)) return true;
+                    if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
+                        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+                        return (dayName === 'Saturday' || dayName === 'Sunday');
+                    }
+                    if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length) {
+                        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+                        return quest.days_visible.includes(dayName);
+                    }
+                    if (quest.schedule) {
+                        const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                        const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
+                        if (dayNames.includes(scheduleDay)) {
+                            const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+                            return scheduleDay === dayName;
+                        }
+                    }
+                    if (quest.schedule && quest.schedule.includes('/')) return this.matchesDatePattern(quest.schedule, date);
+                    return true;
+                };
+                const keepQuests = [];
+                for (const quest of this.quests) {
+                    if (quest.type === 'calendar') {
+                        keepQuests.push(quest);
+                        continue;
+                    }
+                    const isOneTime = quest.schedule === 'One-time';
+                    if (isOneTime && (quest.completed || yesterdayCompletions[quest.id]?.completed)) {
+                        console.log(`🗑️ Removing completed one-time quest: ${quest.name}`);
+                        continue;
+                    }
+                    const wasDue = isQuestDueOnDate(quest, yesterday);
+                    const wasCompleted = yesterdayCompletions[quest.id]?.completed === true;
+                    if (wasDue && !wasCompleted) {
+                        quest.missed = true;
+                        quest.missedDate = yesterday.toDateString();
+                    } else {
+                        quest.missed = false;
+                    }
+                    keepQuests.push(quest);
+                }
+                this.quests = keepQuests;
+                await fetch('api.php?action=update_last_reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lastReset: todayStr })
+                });
+                this.saveData();
+                await this.loadCompletions();
+                await this.updateMissedFlags();
+                this.addBonusPointsForMissed();
+                this.syncCalendarFeeds();
+                this.render();
+            } else {
+                console.log('✅ Reset already done today, skipping.');
+            }
+        },
+
+        async addBonusPointsForMissed() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toDateString();
+            const lastBonusDate = localStorage.getItem('lastBonusDate');
+            if (lastBonusDate === new Date().toDateString()) return;
+            const missedQuests = this.quests.filter(quest => {
+                if (quest.completed) return false;
+                if (quest.type === 'calendar') {
+                    const expiryDate = new Date(quest.expires);
+                    expiryDate.setHours(0, 0, 0, 0);
+                    yesterday.setHours(0, 0, 0, 0);
+                    return expiryDate.getTime() === yesterday.getTime();
+                }
+                return this.wasVisibleYesterday(quest);
+            });
+            if (missedQuests.length > 0) {
+                const bonusPoints = missedQuests.length;
+                this.addToHistory('bonus', `Bonus for ${missedQuests.length} missed quest${missedQuests.length !== 1 ? 's' : ''}`, bonusPoints);
+                await this.loadTodayBonusPoints();
+                localStorage.setItem('lastBonusDate', new Date().toDateString());
+                this.saveData();
+                this.render();
+                console.log(`✨ Added ${bonusPoints} bonus points for missed quests`);
+            }
+        },
+
+        wasVisibleYesterday(quest) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayUTC = new Date(Date.UTC(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate()));
+            if (quest.type === 'calendar') return false;
+            return this.isQuestVisibleOnDate(quest, yesterdayUTC);
+        },
+
+        addToHistory(type, description, points) {
+            const today = new Date().toISOString().slice(0,10);
+            const entry = { type, description, points, date: today, timestamp: new Date().toISOString() };
+            this.history.push(entry);
+            fetch('api.php?action=history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: [entry] })
+            }).catch(e => console.warn('Could not save to server:', e));
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            this.history = this.history.filter(h => new Date(h.timestamp) > thirtyDaysAgo);
+            this.saveData();
+        },
+
+        async saveData() {
+            if (!this.userData) return;
+            const dataToSave = {
+                user: this.userData,
+                quests: this.quests,
+                history: this.history
+            };
+            localStorage.setItem('questTrackerData', JSON.stringify(dataToSave));
+            try {
+                await fetch('api.php', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToSave)
+                });
+            } catch(e) { console.warn('Could not save to server:', e); }
+        },
+
         render() {
             this.updatePoints();
             this.renderMissedQuests();
@@ -1222,6 +1124,8 @@
         updatePoints() {
             document.getElementById('displayTotalPoints').textContent = this.totalPoints;
             document.getElementById('totalPoints').textContent = this.todayPoints;
+            const bonusTodayEl = document.getElementById('displayTodayBonusPoints');
+            if (bonusTodayEl) bonusTodayEl.textContent = `+${this.todayBonusPoints}`;
             const supEl = document.getElementById('displayTodayPoints');
             supEl.textContent = this.todayPoints > 0 ? '+' + this.todayPoints : '';
             this.checkSideQuestUnlock();
@@ -1234,11 +1138,11 @@
         },
 
         async renderMissedQuests() {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toISOString().slice(0,10);
-
-            // Fetch yesterday's completions from the server
+            const todayUTC = new Date();
+            todayUTC.setUTCHours(0, 0, 0, 0);
+            const yesterdayUTC = new Date(todayUTC);
+            yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
+            const yesterdayStr = yesterdayUTC.toISOString().slice(0,10);
             let yesterdayCompletions = {};
             try {
                 const res = await fetch(`api.php?action=completions&date=${yesterdayStr}`);
@@ -1246,40 +1150,35 @@
                     const data = await res.json();
                     yesterdayCompletions = data.completions || {};
                 }
-            } catch(e) {
-                console.warn('Could not load yesterday\'s completions:', e);
-            }
-
-            // Determine which quests were due yesterday and not completed
+            } catch(e) { console.warn('Could not load yesterday\'s completions:', e); }
             const missedQuests = [];
             for (const quest of this.quests) {
+                if (quest.completed) continue;
+                let wasDue = false;
                 if (quest.type === 'calendar') {
                     const expiryDate = new Date(quest.expires);
-                    expiryDate.setHours(0,0,0,0);
-                    if (expiryDate.getTime() === yesterday.setHours(0,0,0,0) && !yesterdayCompletions[quest.id]?.completed) {
-                        missedQuests.push(quest);
-                    }
-                    continue;
+                    expiryDate.setUTCHours(0, 0, 0, 0);
+                    wasDue = expiryDate.getTime() === yesterdayUTC.getTime();
+                } else {
+                    wasDue = this.isQuestVisibleOnDate(quest, yesterdayUTC);
                 }
-                const wasDue = this.wasVisibleYesterday(quest);
                 const wasCompleted = yesterdayCompletions[quest.id]?.completed === true;
-                if (wasDue && !wasCompleted) {
-                    missedQuests.push(quest);
-                }
+                if (wasDue && !wasCompleted) missedQuests.push(quest);
             }
-
             const container = document.getElementById('missedSection');
             if (!missedQuests.length) {
                 container.innerHTML = '';
                 return;
             }
-
             const isCollapsed = localStorage.getItem('missedSectionCollapsed') === 'true';
             const section = document.createElement('div');
             section.className = 'missed-section';
             section.innerHTML = `
-                <div class="missed-header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0;">⚠️ Missed Yesterday (${missedQuests.length})</h3>
+                <div class="missed-header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                    <div>
+                        <h3 style="margin:0;">⚠️ Missed Yesterday (${missedQuests.length})</h3>
+                        <span style="font-size:0.7rem; color:var(--warning);">🌟 = +1 bonus point when completed</span>
+                    </div>
                     <div class="missed-toggle" style="transition:transform 0.3s; ${isCollapsed ? 'transform:rotate(-90deg);' : ''}">▼</div>
                 </div>
                 <div class="missed-content" style="${isCollapsed ? 'display:none;' : ''}"></div>
@@ -1296,7 +1195,7 @@
             missedQuests.forEach(quest => {
                 const item = document.createElement('div');
                 item.className = 'missed-quest';
-                item.innerHTML = `<div class="missed-quest-name">${quest.name}</div><div class="missed-quest-date">${yesterday.toDateString()}</div>`;
+                item.innerHTML = `<div class="missed-quest-name">${this.escapeHtml(quest.name)}</div><div class="missed-quest-date">${yesterdayUTC.toDateString()}</div>`;
                 content.appendChild(item);
             });
             container.innerHTML = '';
@@ -1305,19 +1204,13 @@
 
         extractGroupInfo(quest) {
             const match = quest.name.match(/^(.*?)\s*\((\d+)x\)$/);
-            if (match) {
-                return {
-                    base: match[1].trim(),
-                    step: parseInt(match[2], 10)
-                };
-            }
+            if (match) return { base: match[1].trim(), step: parseInt(match[2], 10) };
             return null;
         },
 
         filterActiveQuests(quests) {
             const groups = new Map();
             const nonGrouped = [];
-
             for (const q of quests) {
                 if (q.completed) continue;
                 const groupInfo = this.extractGroupInfo(q);
@@ -1329,9 +1222,7 @@
                     nonGrouped.push(q);
                 }
             }
-
             const result = [];
-
             for (const [base, items] of groups) {
                 items.sort((a, b) => a.step - b.step);
                 for (const item of items) {
@@ -1341,7 +1232,6 @@
                     }
                 }
             }
-
             const seenGroups = new Set();
             for (const q of nonGrouped) {
                 if (q.group_name) {
@@ -1350,19 +1240,15 @@
                 }
                 result.push(q);
             }
-
             return result;
         },
 
         sortQuestsByReminderTime(quests) {
             return [...quests].sort((a, b) => {
-                const timeA = a.reminder_time || '';
-                const timeB = b.reminder_time || '';
-                // Helper to convert "9:00 am" to minutes since midnight
                 const toMinutes = (timeStr) => {
-                    if (!timeStr) return -1; // No time → goes to top
+                    if (!timeStr) return -1;
                     const match = timeStr.match(/(\d+):(\d+)\s*(am|pm)/i);
-                    if (!match) return Infinity; // invalid → bottom
+                    if (!match) return Infinity;
                     let hours = parseInt(match[1]);
                     const minutes = parseInt(match[2]);
                     const ampm = match[3].toLowerCase();
@@ -1370,10 +1256,9 @@
                     if (ampm === 'am' && hours === 12) hours = 0;
                     return hours * 60 + minutes;
                 };
-                const minsA = toMinutes(timeA);
-                const minsB = toMinutes(timeB);
+                const minsA = toMinutes(a.reminder_time);
+                const minsB = toMinutes(b.reminder_time);
                 if (minsA !== minsB) return minsA - minsB;
-                // same time → alphabetical
                 return a.name.localeCompare(b.name);
             });
         },
@@ -1381,24 +1266,20 @@
         renderQuests() {
             const container = document.getElementById('questsContainer');
             container.innerHTML = '';
-
             let allMain = this.quests.filter(q => q.type === 'main' && this.isQuestVisibleToday(q));
             let allSide = this.quests.filter(q => q.type === 'side' && this.isQuestVisibleToday(q));
             allMain = this.sortQuestsByReminderTime(allMain);
             allSide = this.sortQuestsByReminderTime(allSide);
             const completedMain = allMain.filter(q => q.completed).length;
             const required = Math.ceil(allMain.length * 0.25);
-
             if (!this.sideQuestUnlocked && allSide.length) {
                 const lockMsg = document.createElement('div');
                 lockMsg.className = 'lock-message';
                 lockMsg.innerHTML = `🔒 Complete ${required} main quests (${completedMain}/${required}) to unlock side quests!`;
                 container.appendChild(lockMsg);
             }
-
             const main = this.filterActiveQuests(allMain);
             const side = this.filterActiveQuests(allSide);
-
             if (main.length) container.appendChild(this.createQuestSection('🎪 Main Quests', main, false));
             if (side.length) container.appendChild(this.createQuestSection('⭐ Side Quests', side, this.sideQuestUnlocked));
         },
@@ -1412,10 +1293,14 @@
                 const reminderHtml = quest.reminder_time ? `<span style="margin-left:0.5rem;">⏰ ${quest.reminder_time}</span>` : '';
                 const item = document.createElement('div');
                 item.className = `quest-item ${quest.completed ? 'completed' : ''}${!unlocked && quest.type === 'side' ? ' locked' : ''}`;
+                const bonusStarHtml = quest.missed ? `<div class="pill bonus-star">🌟</div>` : '';
                 item.innerHTML = `
                     <input type="checkbox" class="quest-checkbox" ${quest.completed ? 'checked' : ''} ${!unlocked && quest.type === 'side' ? 'disabled' : ''} onchange="app.toggleQuest('${quest.id}', '${quest.name}', ${quest.points || 1})">
                     <div class="quest-info"><p class="quest-name">${quest.name}</p><p class="quest-details">${quest.schedule || 'Daily'} ${reminderHtml}</p></div>
-                    <div class="quest-points">${quest.points || 1} pts</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        ${bonusStarHtml}
+                        <div class="pill">${quest.points || 1} pts</div>
+                    </div>
                 `;
                 list.appendChild(item);
             });
@@ -1426,10 +1311,10 @@
             const quest = this.quests.find(q => q.id === id);
             if (!quest) return;
             if (quest.type === 'side' && !this.sideQuestUnlocked) return;
-
+            await this.updateMissedFlags();
             const newCompleted = !quest.completed;
             const wasCompleted = quest.completed;
-
+            const wasMissed = quest.missed;
             try {
                 const res = await fetch('api.php?action=toggle_quest', {
                     method: 'POST',
@@ -1438,27 +1323,36 @@
                         quest_id: id,
                         quest_name: name,
                         points: points,
-                        completed: newCompleted
+                        completed: newCompleted,
+                        was_missed: wasMissed
                     })
                 });
-
                 if (res.ok) {
                     quest.completed = newCompleted;
-                    if (newCompleted) quest.missed = false;
-
                     if (newCompleted) {
+                        quest.missed = false;
                         this.saveLastToggle(quest.id, wasCompleted, points);
+                        if (wasMissed) {
+                            console.log('✨ Awarding bonus for:', name);
+                            this.addToHistory('bonus', `Bonus for completing missed quest: ${name}`, 1);
+                            await this.loadTodayBonusPoints();
+                            if (Notification.permission === 'granted') {
+                                new Notification('✨ Bonus Point!', {
+                                    body: `You earned +1 for completing a missed quest!`,
+                                    icon: '/favicon.ico',
+                                    tag: 'bonus-missed'
+                                });
+                            }
+                        }
                     }
-
                     await this.loadPoints();
+                    await this.loadTodayBonusPoints();
                     await this.loadCompletions();
                     this.render();
                 } else {
                     console.error('Failed to toggle quest');
                 }
-            } catch(e) {
-                console.error('Error toggling quest:', e);
-            }
+            } catch(e) { console.error('Error toggling quest:', e); }
         },
 
         renderCompleted() {
@@ -1483,16 +1377,14 @@
             const calendarQuests = this.quests.filter(q => q.type === 'calendar' && this.isQuestVisibleToday(q) && !q.completed);
             const section = document.getElementById('calendarQuestsSection');
             const container = document.getElementById('calendarQuestsList');
-            const header = document.getElementById('calendarSectionHeader');
             const toggle = document.getElementById('calendarToggle');
-
             if (!calendarQuests.length) {
                 section.style.display = 'none';
                 return;
             }
-
             section.style.display = 'block';
             container.innerHTML = '';
+            const header = document.getElementById('calendarSectionHeader');
             if (header && !header._toggleAdded) {
                 header.onclick = () => {
                     container.classList.toggle('hidden');
@@ -1500,7 +1392,6 @@
                 };
                 header._toggleAdded = true;
             }
-
             calendarQuests.forEach(quest => {
                 const item = document.createElement('div');
                 item.className = 'quest-item';
@@ -1591,36 +1482,14 @@
             } catch(e) { document.getElementById('playerAvatar').innerHTML = '🎮'; }
         },
 
-        addBonusPointsForMissed() {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toDateString();
-
-            const lastBonusDate = localStorage.getItem('lastBonusDate');
-            if (lastBonusDate === new Date().toDateString()) {
-                return;
-            }
-
-            const missedQuests = this.quests.filter(quest => {
-                if (quest.completed) return false;
-                if (quest.type === 'calendar') {
-                    const expiryDate = new Date(quest.expires);
-                    expiryDate.setHours(0, 0, 0, 0);
-                    yesterday.setHours(0, 0, 0, 0);
-                    return expiryDate.getTime() === yesterday.getTime();
-                }
-                return this.wasVisibleYesterday(quest);
+        escapeHtml(str) {
+            return String(str || '').replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
             });
-
-            if (missedQuests.length > 0) {
-                const bonusPoints = missedQuests.length;
-                this.addToHistory('bonus', `Bonus for ${missedQuests.length} missed quest${missedQuests.length !== 1 ? 's' : ''}`, bonusPoints);
-                localStorage.setItem('lastBonusDate', new Date().toDateString());
-                this.saveData();
-                this.render();
-                console.log(`✨ Added ${bonusPoints} bonus points for missed quests`);
-            }
-        },
+        }
     };
 
     app.init();

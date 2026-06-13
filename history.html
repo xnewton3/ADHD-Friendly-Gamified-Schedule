@@ -4,18 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
     <meta name="theme-color" content="#1a1a1a">
-    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline';">
     <title>Quest History</title>
     <link rel="manifest" href="manifest.json?v=5">
     <script>
         (function() {
-            // Get saved theme or fallback to 'default'
             var savedTheme = localStorage.getItem('active_theme') || 'default';
             var link = document.createElement('link');
             link.rel = 'stylesheet';
             link.id = 'themeStylesheet';
             var themeFile = (savedTheme === 'custom') ? 'custom-theme.css' : 'theme-' + savedTheme + '.css';
-            // Add cache-busting timestamp
             link.href = 'css/' + themeFile + '?_=' + Date.now();
             document.head.appendChild(link);
         })();
@@ -27,46 +24,58 @@
         .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 2px solid var(--jade); padding-bottom: 0.5rem; }
         .header h1 { color: var(--jade); font-size: 2rem; }
-        .nav-back button, .reload-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+        .nav-back button, .reload-btn, .export-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
         .controls { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
         .control-group { display: flex; flex-direction: column; gap: 0.25rem; }
         .control-group label { font-size: 0.8rem; }
         .control-group input, .control-group select { padding: 0.5rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); }
-        .history-container { display: flex; flex-direction: column; gap: 1rem; }
-        .day-group { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; }
-        .day-header { background: var(--jade-dark); padding: 0.75rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
-        .day-header:hover { background: var(--jade); }
-        .day-header h2 { font-size: 1rem; }
-        .day-toggle { transition: transform 0.3s; }
-        .day-toggle.collapsed { transform: rotate(-90deg); }
-        .day-stats { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--olive-light); }
-        .day-content { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
-        .day-content.hidden { display: none; }
-        .history-item { background: var(--dark-grey-3); padding: 0.5rem 0.75rem; border-radius: 6px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }
-        .history-item.reward { border-left-color: var(--success); }
-        .history-item.quest { border-left-color: var(--jade); }
-        .history-item.bonus { border-left-color: var(--warning); }
-        .history-item.achievement { border-left-color: var(--gold, #ffd700); }
-        .history-item-points { background: var(--jade); padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: 600; font-size: 0.75rem; }
-        .history-item.reward .history-item-points { background: var(--success); }
-        .history-item.bonus .history-item-points { background: var(--warning); }
-        .history-item.achievement .history-item-points { background: #ffd700; color: var(--dark-grey); }
-        .stats-summary { background: var(--dark-grey-2); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; }
+        .date-range { display: flex; gap: 0.5rem; align-items: flex-end; }
+        .stats-summary { background: var(--dark-grey-2); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
         .stat-card { background: var(--dark-grey-3); padding: 0.75rem; border-radius: 6px; text-align: center; border-left: 3px solid var(--jade); }
         .stat-card .value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
         .stat-card .label { font-size: 0.7rem; text-transform: uppercase; color: var(--olive-light); }
-        @media (max-width: 600px) { .controls { grid-template-columns: 1fr; } .day-stats { display: none; } }
+        .history-container { display: flex; flex-direction: column; gap: 1rem; }
+        .day-group { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; overflow: hidden; }
+        .day-header { background: var(--jade-dark); padding: 0.75rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+        .day-header h2 { font-size: 1rem; margin: 0; }
+        .day-stats { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--olive-light); flex-wrap: wrap; }
+        .day-toggle { transition: transform 0.3s; font-size: 0.8rem; }
+        .day-toggle.collapsed { transform: rotate(-90deg); }
+        .day-content { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .day-content.hidden { display: none; }
+        .history-item { background: var(--dark-grey-3); padding: 0.5rem 0.75rem; border-radius: 6px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+        .history-item.reward { border-left-color: var(--success); }
+        .history-item.quest { border-left-color: var(--jade); }
+        .history-item.bonus { border-left-color: var(--warning); }
+        .history-item.achievement { border-left-color: #ffd700; }
+        .history-item-points { background: var(--jade); padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: 600; font-size: 0.75rem; white-space: nowrap; }
+        .history-item.reward .history-item-points { background: var(--success); }
+        .history-item.bonus .history-item-points { background: var(--warning); }
+        .history-item.achievement .history-item-points { background: #ffd700; color: var(--dark-grey); }
+        .empty-state { text-align: center; color: var(--olive-light); padding: 2rem; }
+        @media (max-width: 600px) { .controls { grid-template-columns: 1fr; } .day-stats { justify-content: flex-start; } .date-range { flex-direction: column; } }
     </style>
 </head>
 <body>
 <div class="container">
-    <div class="nav-back"><button onclick="window.location.href='index.html'">← Back to Quests</button> <button class="reload-btn" onclick="location.reload()">🔄 Refresh</button></div>
+    <div class="nav-back">
+        <button onclick="window.location.href='index.html'">← Back to Quests</button>
+        <button class="reload-btn" onclick="location.reload()">🔄 Refresh</button>
+        <button class="export-btn" onclick="history.exportToCSV()">📎 Export CSV</button>
+    </div>
     <div class="header"><h1>📊 Quest History</h1></div>
 
     <div class="controls">
         <div class="control-group"><label>🔍 Search</label><input type="text" id="searchInput" placeholder="Search..." oninput="history.filterHistory()"></div>
         <div class="control-group"><label>📅 Sort By</label><select id="sortBy" onchange="history.filterHistory()"><option value="date-desc">Newest First</option><option value="date-asc">Oldest First</option><option value="points-high">Most Points</option><option value="points-low">Least Points</option></select></div>
         <div class="control-group"><label>📋 Type</label><select id="filterType" onchange="history.filterHistory()"><option value="all">All</option><option value="reward">Rewards</option><option value="quest">Quests</option><option value="bonus">Bonuses</option><option value="achievement">Achievements</option></select></div>
+        <div class="control-group date-range">
+            <label>📅 Date Range</label>
+            <div style="display: flex; gap: 0.5rem;">
+                <input type="date" id="startDate" placeholder="Start" onchange="history.filterHistory()">
+                <input type="date" id="endDate" placeholder="End" onchange="history.filterHistory()">
+            </div>
+        </div>
     </div>
 
     <div class="stats-summary" id="statsSummary">Loading stats...</div>
@@ -110,15 +119,26 @@
             const search = document.getElementById('searchInput').value.toLowerCase();
             const sort = document.getElementById('sortBy').value;
             const filterType = document.getElementById('filterType').value;
+            let startDate = document.getElementById('startDate').value;
+            let endDate = document.getElementById('endDate').value;
 
             this.filteredData = this.allData.filter(item => {
+                // Search
                 const matchesSearch = !search || item.description?.toLowerCase().includes(search);
+                // Type
                 const matchesType = filterType === 'all' ||
                     (filterType === 'reward' && item.type === 'reward_redeem') ||
                     (filterType === 'quest' && item.type === 'quest_complete') ||
                     (filterType === 'bonus' && item.type === 'bonus') ||
                     (filterType === 'achievement' && item.type === 'achievement');
-                return matchesSearch && matchesType;
+                // Date range
+                let matchesDate = true;
+                if (startDate || endDate) {
+                    const itemDate = item.date.split('T')[0]; // normalize YYYY-MM-DD
+                    if (startDate && itemDate < startDate) matchesDate = false;
+                    if (endDate && itemDate > endDate) matchesDate = false;
+                }
+                return matchesSearch && matchesType && matchesDate;
             });
 
             this.filteredData.sort((a, b) => {
@@ -137,7 +157,7 @@
         renderHistory() {
             const container = document.getElementById('historyContainer');
             if (!this.filteredData.length) {
-                container.innerHTML = '<div class="empty-state"><p>📭 No history yet. Complete quests or redeem rewards to get started!</p></div>';
+                container.innerHTML = '<div class="empty-state"><p>📭 No history matching your filters.</p></div>';
                 return;
             }
 
@@ -208,18 +228,57 @@
         },
 
         renderStats() {
-            const container = document.getElementById('statsSummary');
+            // Enhanced stats: total rewards, achievements, net points, days active, most completed quest type, average points per day
             const totalRewards = this.filteredData.filter(i => i.type === 'reward_redeem').length;
             const totalAchievements = this.filteredData.filter(i => i.type === 'achievement').length;
             const totalPoints = this.filteredData.reduce((sum, i) => sum + i.points, 0);
             const totalDays = new Set(this.filteredData.map(i => i.date)).size;
+            const avgPointsPerDay = totalDays ? (totalPoints / totalDays).toFixed(1) : 0;
 
-            container.innerHTML = `
+            // Most completed quest type (from descriptions)
+            const questNames = this.filteredData.filter(i => i.type === 'quest_complete').map(i => i.description.replace('Completed quest: ', ''));
+            const questCounts = {};
+            questNames.forEach(name => { questCounts[name] = (questCounts[name] || 0) + 1; });
+            let mostCompletedQuest = 'None';
+            let maxCount = 0;
+            for (const [name, count] of Object.entries(questCounts)) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    mostCompletedQuest = name;
+                }
+            }
+            const mostCompletedText = maxCount > 0 ? `${mostCompletedQuest} (${maxCount}x)` : 'None';
+
+            document.getElementById('statsSummary').innerHTML = `
                 <div class="stat-card"><div class="value">${totalRewards}</div><div class="label">Rewards</div></div>
                 <div class="stat-card"><div class="value">${totalAchievements}</div><div class="label">Achievements</div></div>
                 <div class="stat-card"><div class="value">${totalPoints > 0 ? '+' : ''}${totalPoints}</div><div class="label">Net Points</div></div>
                 <div class="stat-card"><div class="value">${totalDays}</div><div class="label">Days Active</div></div>
+                <div class="stat-card"><div class="value">${avgPointsPerDay}</div><div class="label">Avg Points/Day</div></div>
+                <div class="stat-card"><div class="value">${mostCompletedText}</div><div class="label">Most Completed Quest</div></div>
             `;
+        },
+
+        exportToCSV() {
+            if (!this.filteredData.length) {
+                alert('No data to export.');
+                return;
+            }
+            const headers = ['Date', 'Type', 'Description', 'Points', 'Timestamp'];
+            const rows = this.filteredData.map(item => [
+                item.date,
+                item.type,
+                `"${item.description.replace(/"/g, '""')}"`,
+                item.points,
+                item.timestamp
+            ]);
+            const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `quest_history_${new Date().toISOString().slice(0,10)}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
         }
     };
 

@@ -42,10 +42,10 @@ error_reporting(E_ALL);
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, X-Stats-Access-Code');
 
 define('DATA_DIR', __DIR__ . '/data');
-define('DB_FILE', DATA_DIR . '/data.db');  // ← Changed to data.db
+define('DB_FILE', DATA_DIR . '/data.db');
 
 // Create data directory if it doesn't exist
 if (!is_dir(DATA_DIR)) {
@@ -56,7 +56,6 @@ if (!is_dir(DATA_DIR)) {
 function init_database() {
     $db = new SQLite3(DB_FILE);
 
-    // Users table
     $db->exec("CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         username TEXT NOT NULL,
@@ -64,7 +63,6 @@ function init_database() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
-    // User settings
     $db->exec("CREATE TABLE IF NOT EXISTS user_settings (
         user_id TEXT PRIMARY KEY,
         small_reward_points INTEGER DEFAULT 10,
@@ -74,7 +72,6 @@ function init_database() {
         FOREIGN KEY (user_id) REFERENCES users(id)
     )");
 
-    // Quests table
     $db->exec("CREATE TABLE IF NOT EXISTS quests (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -94,7 +91,6 @@ function init_database() {
         FOREIGN KEY (user_id) REFERENCES users(id)
     )");
 
-    // Quest completions
     $db->exec("CREATE TABLE IF NOT EXISTS quest_completions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         quest_id TEXT NOT NULL,
@@ -107,7 +103,6 @@ function init_database() {
         FOREIGN KEY (user_id) REFERENCES users(id)
     )");
 
-    // History/points log
     $db->exec("CREATE TABLE IF NOT EXISTS history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
@@ -119,7 +114,6 @@ function init_database() {
         FOREIGN KEY (user_id) REFERENCES users(id)
     )");
 
-    // Shop items
     $db->exec("CREATE TABLE IF NOT EXISTS shop_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
@@ -131,7 +125,6 @@ function init_database() {
         FOREIGN KEY (user_id) REFERENCES users(id)
     )");
 
-    // Achievements
     $db->exec("CREATE TABLE IF NOT EXISTS achievements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -142,7 +135,6 @@ function init_database() {
         icon TEXT
     )");
 
-    // User achievements (earned)
     $db->exec("CREATE TABLE IF NOT EXISTS user_achievements (
         user_id TEXT NOT NULL,
         achievement_id INTEGER NOT NULL,
@@ -152,7 +144,6 @@ function init_database() {
         FOREIGN KEY (achievement_id) REFERENCES achievements(id)
     )");
 
-    // Calendar feeds
     $db->exec("CREATE TABLE IF NOT EXISTS calendar_feeds (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
@@ -192,13 +183,48 @@ function init_database() {
         }
     }
 
+    // Add last_reset column to users table if not exists
+    $columns = $db->query("PRAGMA table_info(users)");
+    $hasLastReset = false;
+    while ($col = $columns->fetchArray(SQLITE3_ASSOC)) {
+        if ($col['name'] === 'last_reset') {
+            $hasLastReset = true;
+            break;
+        }
+    }
+    if (!$hasLastReset) {
+        $db->exec("ALTER TABLE users ADD COLUMN last_reset TEXT DEFAULT NULL");
+    }
+
     $db->close();
 }
 
 // Run initialization
 init_database();
 
-// Helper functions
+// Start session for password login persistence
+session_start();
+
+// Helper function to check if user is logged in via password
+function isLoggedIn() {
+    if (isset($_SESSION['password_verified']) && $_SESSION['password_verified'] === true) {
+        return true;
+    }
+    if (isset($_COOKIE['password_verified']) && $_COOKIE['password_verified'] === '1') {
+        $_SESSION['password_verified'] = true;
+        return true;
+    }
+    return false;
+}
+
+// Helper function to check if stats access code is provided and valid
+function isStatsAuthorized() {
+    $headers = getallheaders();
+    $providedCode = $headers['X-Stats-Access-Code'] ?? '';
+    return $providedCode === STATS_ACCESS_CODE;
+}
+
+// Helper to get single user ID (always same)
 function get_user_id() {
     return 'single_user';
 }
@@ -210,15 +236,69 @@ function get_db() {
 $action = $_GET['action'] ?? null;
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Public endpoints (no auth of any kind required)
+$public_actions = ['test', 'login_status', 'verify_password', 'logout', 'stats_access_code', 'ical_proxy', 'get_theme'];
+
+// Stats endpoints: can be accessed via stats code header (GET only) OR normal login
+$stats_actions = ['', 'history', 'history_stats', 'points', 'today_bonus_points', 'completions', 'achievements', 'shop_items', 'calendar_feeds', 'calendar_quests', 'avatar', 'last_reset'];
+
+// Authentication logic
+if (!in_array($action, $public_actions)) {
+    // Allow GET requests with valid stats code
+    if ($method === 'GET' && in_array($action, $stats_actions) && isStatsAuthorized()) {
+        // Stats code granted – continue
+    }
+    // Otherwise require normal login
+    elseif (!isLoggedIn()) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Unauthorized – please login or provide valid stats access code']);
+        exit;
+    }
+}
+
 // ============ TEST ENDPOINT ============
 if ($method === 'GET' && $action === 'test') {
     echo json_encode(['ok' => true, 'php_version' => phpversion(), 'db' => DB_FILE]);
     exit;
 }
 
+// ============ PASSWORD LOGIN ENDPOINTS ============
+
+// GET login status – returns whether user is already logged in
+if ($method === 'GET' && $action === 'login_status') {
+    echo json_encode(['verified' => isLoggedIn()]);
+    exit;
+}
+
+// POST verify password – checks against PASSKEY_CREATION_KEY and sets session + cookie
+if ($method === 'POST' && $action === 'verify_password') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $password = $data['password'] ?? '';
+
+    if ($password === PASSKEY_CREATION_KEY) {
+        $_SESSION['password_verified'] = true;
+        // Set a cookie that lasts 3 weeks (21 days) – renewed on each page load
+        setcookie('password_verified', '1', time() + (21 * 24 * 3600), '/', '', false, true);
+        echo json_encode(['success' => true]);
+    } else {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'error' => 'Invalid password']);
+    }
+    exit;
+}
+
+// POST logout – clears session and cookie
+if ($method === 'POST' && $action === 'logout') {
+    $_SESSION['password_verified'] = false;
+    setcookie('password_verified', '', time() - 3600, '/');
+    session_destroy();
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 // ============ USER ENDPOINTS ============
 
-// GET user data
+// GET user data (main dashboard data)
 if ($method === 'GET' && !$action) {
     $db = get_db();
     $userId = get_user_id();
@@ -237,7 +317,6 @@ if ($method === 'GET' && !$action) {
         $stmt->bindValue(':id', $userId, SQLITE3_TEXT);
         $stmt->execute();
 
-        // Get the new user
         $stmt = $db->prepare("SELECT * FROM users WHERE id = :id");
         $stmt->bindValue(':id', $userId, SQLITE3_TEXT);
         $user = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
@@ -254,7 +333,6 @@ if ($method === 'GET' && !$action) {
     $questsResult = $stmt->execute();
     $quests = [];
     while ($row = $questsResult->fetchArray(SQLITE3_ASSOC)) {
-        // Parse JSON fields
         if ($row['days_visible']) $row['days_visible'] = json_decode($row['days_visible'], true);
         if ($row['specific_dates']) $row['specific_dates'] = json_decode($row['specific_dates'], true);
         $quests[] = $row;
@@ -292,12 +370,11 @@ if ($method === 'GET' && !$action) {
 
 // ============ POINTS CALCULATION ============
 
-// GET points (calculated from history)
+// GET points – total and today's earned points
 if ($method === 'GET' && $action === 'points') {
     $db = get_db();
     $userId = get_user_id();
 
-    // Convert string points to integers for sum
     $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as total FROM history WHERE user_id = '$userId'", true);
     $totalPoints = $result['total'] ?? 0;
 
@@ -306,24 +383,43 @@ if ($method === 'GET' && $action === 'points') {
     $todayPoints = $result['today_total'] ?? 0;
 
     $db->close();
-
     echo json_encode(['totalPoints' => $totalPoints, 'todayPoints' => $todayPoints]);
+    exit;
+}
+
+// GET today's bonus points (from history where type='bonus' and date = today)
+if ($method === 'GET' && $action === 'today_bonus_points') {
+    $db = get_db();
+    $userId = get_user_id();
+    $result = $db->query("SELECT points, date FROM history WHERE user_id = '$userId' AND type = 'bonus'");
+    $todayBonus = 0;
+    $todayTimestamp = strtotime(date('Y-m-d'));
+    while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+        $storedDate = $row['date'];
+        $storedTimestamp = strtotime($storedDate);
+        if ($storedTimestamp !== false && $storedTimestamp === $todayTimestamp) {
+            $todayBonus += (int)$row['points'];
+        }
+    }
+    $db->close();
+    echo json_encode(['todayBonus' => $todayBonus]);
     exit;
 }
 
 // ============ QUEST COMPLETIONS ============
 
-// GET today's completions
+// GET completions for a specific date (default today)
 if ($method === 'GET' && $action === 'completions') {
     $db = get_db();
     $userId = get_user_id();
-    $today = date('Y-m-d');
-
+    $dateParam = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateParam)) {
+        $dateParam = date('Y-m-d');
+    }
     $stmt = $db->prepare("SELECT quest_id, completed, points_earned FROM quest_completions WHERE user_id = :user AND completion_date = :date");
     $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
-    $stmt->bindValue(':date', $today, SQLITE3_TEXT);
+    $stmt->bindValue(':date', $dateParam, SQLITE3_TEXT);
     $result = $stmt->execute();
-
     $completions = [];
     while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
         $completions[$row['quest_id']] = [
@@ -331,13 +427,12 @@ if ($method === 'GET' && $action === 'completions') {
             'points_earned' => $row['points_earned']
         ];
     }
-
     $db->close();
     echo json_encode(['completions' => $completions]);
     exit;
 }
 
-// POST toggle quest completion
+// POST toggle quest completion – marks a quest as done/undone and updates history
 if ($method === 'POST' && $action === 'toggle_quest') {
     $data = json_decode(file_get_contents('php://input'), true);
     $db = get_db();
@@ -372,12 +467,12 @@ if ($method === 'POST' && $action === 'toggle_quest') {
         $stmt->execute();
     }
 
-    // Add to history if completed (store as plain integer, NO plus sign)
+    // Add to history if completed
     if ($completed) {
         $stmt = $db->prepare("INSERT INTO history (user_id, type, description, points, date) VALUES (:user, 'quest_complete', :desc, :points, :date)");
         $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
         $stmt->bindValue(':desc', "Completed quest: " . str_replace("'", "''", $questName), SQLITE3_TEXT);
-        $stmt->bindValue(':points', $points, SQLITE3_INTEGER);  // Just the number, no +
+        $stmt->bindValue(':points', $points, SQLITE3_INTEGER);
         $stmt->bindValue(':date', $today, SQLITE3_TEXT);
         $stmt->execute();
     } else {
@@ -389,15 +484,23 @@ if ($method === 'POST' && $action === 'toggle_quest') {
         $stmt->execute();
     }
 
-    // Check achievements
-    check_achievements($db, $userId);
+    if ($completed && isset($data['was_missed']) && $data['was_missed'] === true) {
+        // Award bonus for completing a missed quest
+        $stmt = $db->prepare("INSERT INTO history (user_id, type, description, points, date) VALUES (:user, 'bonus', :desc, :points, :date)");
+        $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
+        $stmt->bindValue(':desc', "Bonus for completing missed quest: " . str_replace("'", "''", $questName), SQLITE3_TEXT);
+        $stmt->bindValue(':points', 1, SQLITE3_INTEGER);
+        $stmt->bindValue(':date', $today, SQLITE3_TEXT);
+        $stmt->execute();
+    }
 
+    check_achievements($db, $userId);
     $db->close();
     echo json_encode(['ok' => true, 'completed' => (bool)$completed]);
     exit;
 }
 
-// POST add bonus points for missed quests
+// POST add bonus points for missed quests (bulk)
 if ($method === 'POST' && $action === 'add_bonus') {
     $data = json_decode(file_get_contents('php://input'), true);
     $db = get_db();
@@ -512,7 +615,7 @@ if ($method === 'DELETE' && $action === 'delete_shop_item') {
     exit;
 }
 
-// POST redeem reward
+// POST redeem reward – deduct points and log redemption
 if ($method === 'POST' && $action === 'redeem') {
     $data = json_decode(file_get_contents('php://input'), true);
     $db = get_db();
@@ -522,16 +625,14 @@ if ($method === 'POST' && $action === 'redeem') {
     $itemName = $data['name'];
     $cost = $data['cost'];
 
-    // Check if user has enough points (convert string points to integers)
     $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as total FROM history WHERE user_id = '$userId'", true);
     $balance = $result['total'] ?? 0;
 
     if ($balance >= $cost) {
-        // Add to history (store as negative integer, NO minus sign in string)
         $stmt = $db->prepare("INSERT INTO history (user_id, type, description, points, date) VALUES (:user, 'reward_redeem', :desc, :points, :date)");
         $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
         $stmt->bindValue(':desc', "Redeemed $itemName", SQLITE3_TEXT);
-        $stmt->bindValue(':points', -$cost, SQLITE3_INTEGER);  // Negative integer
+        $stmt->bindValue(':points', -$cost, SQLITE3_INTEGER);
         $stmt->bindValue(':date', $today, SQLITE3_TEXT);
         $stmt->execute();
 
@@ -546,19 +647,17 @@ if ($method === 'POST' && $action === 'redeem') {
 
 // ============ ACHIEVEMENTS ============
 
-// GET achievements
+// GET achievements – list all and which ones are earned
 if ($method === 'GET' && $action === 'achievements') {
     $db = get_db();
     $userId = get_user_id();
 
-    // Get all achievements
     $achievementsResult = $db->query("SELECT * FROM achievements ORDER BY requirement_value");
     $allAchievements = [];
     while ($row = $achievementsResult->fetchArray(SQLITE3_ASSOC)) {
         $allAchievements[] = $row;
     }
 
-    // Get earned ones
     $stmt = $db->prepare("SELECT achievement_id FROM user_achievements WHERE user_id = :user");
     $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
     $earnedResult = $stmt->execute();
@@ -568,7 +667,6 @@ if ($method === 'GET' && $action === 'achievements') {
     }
 
     $db->close();
-
     echo json_encode([
         'all' => $allAchievements,
         'earned' => $earnedIds
@@ -578,10 +676,8 @@ if ($method === 'GET' && $action === 'achievements') {
 
 // Helper function to check and award achievements
 function check_achievements($db, $userId) {
-    // Get total quest count
     $questCount = $db->querySingle("SELECT COUNT(*) FROM history WHERE user_id = '$userId' AND type = 'quest_complete'");
 
-    // Get streak (consecutive days with at least one completion)
     $streakResult = $db->query("SELECT DISTINCT date FROM history WHERE user_id = '$userId' AND type = 'quest_complete' ORDER BY date DESC");
     $streak = 0;
     $lastDate = null;
@@ -600,19 +696,12 @@ function check_achievements($db, $userId) {
         $lastDate = $currentDate;
     }
 
-    // Get lemonade completions (quests containing 'lemonade' or 'water')
     $lemonadeCount = $db->querySingle("SELECT COUNT(DISTINCT date) FROM history WHERE user_id = '$userId' AND type = 'quest_complete' AND (description LIKE '%lemonade%' OR description LIKE '%water%')");
-
-    // Get morning quests (before 9 AM)
     $morningCount = $db->querySingle("SELECT COUNT(*) FROM history WHERE user_id = '$userId' AND type = 'quest_complete' AND time(timestamp) < '09:00:00'");
-
-    // Get night quests (after 10 PM)
     $nightCount = $db->querySingle("SELECT COUNT(*) FROM history WHERE user_id = '$userId' AND type = 'quest_complete' AND time(timestamp) > '22:00:00'");
 
-    // Check each achievement
     $achievementsResult = $db->query("SELECT * FROM achievements");
     while ($ach = $achievementsResult->fetchArray(SQLITE3_ASSOC)) {
-        // Check if already earned
         $check = $db->querySingle("SELECT COUNT(*) FROM user_achievements WHERE user_id = '$userId' AND achievement_id = {$ach['id']}");
         if ($check > 0) continue;
 
@@ -636,13 +725,11 @@ function check_achievements($db, $userId) {
         }
 
         if ($earned) {
-            // Award achievement
             $stmt = $db->prepare("INSERT INTO user_achievements (user_id, achievement_id) VALUES (:user, :ach)");
             $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
             $stmt->bindValue(':ach', $ach['id'], SQLITE3_INTEGER);
             $stmt->execute();
 
-            // Award points
             if ($ach['points_reward'] > 0) {
                 $today = date('Y-m-d');
                 $stmt = $db->prepare("INSERT INTO history (user_id, type, description, points, date) VALUES (:user, 'achievement', :desc, :points, :date)");
@@ -712,7 +799,7 @@ if ($method === 'DELETE' && $action === 'delete_calendar_feed') {
 
 // ============ AVATAR ============
 
-// GET avatar
+// GET avatar image (PNG)
 if ($method === 'GET' && $action === 'avatar') {
     $avatarFile = DATA_DIR . '/avatar.png';
     if (file_exists($avatarFile)) {
@@ -724,7 +811,7 @@ if ($method === 'GET' && $action === 'avatar') {
     exit;
 }
 
-// POST avatar
+// POST upload new avatar
 if ($method === 'POST' && $action === 'avatar') {
     if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
         move_uploaded_file($_FILES['avatar']['tmp_name'], DATA_DIR . '/avatar.png');
@@ -738,7 +825,7 @@ if ($method === 'POST' && $action === 'avatar') {
 
 // ============ HISTORY ============
 
-// GET history
+// GET full history log
 if ($method === 'GET' && $action === 'history') {
     $db = get_db();
     $userId = get_user_id();
@@ -754,45 +841,38 @@ if ($method === 'GET' && $action === 'history') {
     exit;
 }
 
-// GET history stats (for dashboard)
+// GET history statistics (for dashboard)
 if ($method === 'GET' && $action === 'history_stats') {
     $db = get_db();
     $userId = get_user_id();
 
     $stats = [];
 
-    // Total points earned (sum of positive points) - convert to integer
     $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as total FROM history WHERE user_id = '$userId' AND CAST(points AS INTEGER) > 0", true);
     $stats['total_points_earned'] = $result['total'] ?? 0;
 
-    // Total points spent (sum of negative points)
     $result = $db->querySingle("SELECT SUM(ABS(CAST(points AS INTEGER))) as total FROM history WHERE user_id = '$userId' AND CAST(points AS INTEGER) < 0", true);
     $stats['total_points_spent'] = $result['total'] ?? 0;
 
-    // Net points
     $stats['net_points'] = $stats['total_points_earned'] - $stats['total_points_spent'];
 
-    // Total rewards redeemed
     $result = $db->querySingle("SELECT COUNT(*) as count FROM history WHERE user_id = '$userId' AND type = 'reward_redeem'");
     $stats['total_rewards'] = $result['count'] ?? 0;
 
-    // Total quests completed
     $result = $db->querySingle("SELECT COUNT(*) as count FROM history WHERE user_id = '$userId' AND type = 'quest_complete'");
     $stats['total_quests'] = $result['count'] ?? 0;
 
-    // Best day (by points earned)
     $result = $db->querySingle("SELECT date, SUM(CAST(points AS INTEGER)) as total FROM history WHERE user_id = '$userId' AND CAST(points AS INTEGER) > 0 GROUP BY date ORDER BY total DESC LIMIT 1", true);
     $stats['best_day'] = $result;
 
     $db->close();
-
     echo json_encode($stats);
     exit;
 }
 
 // ============ REMINDERS ============
 
-// GET pending reminders
+// GET pending reminders (for browser notifications)
 if ($method === 'GET' && $action === 'pending_reminders') {
     $db = get_db();
     $userId = get_user_id();
@@ -815,14 +895,12 @@ if ($method === 'GET' && $action === 'pending_reminders') {
         }
     }
 
-    // Get quests with reminders
     $stmt = $db->prepare("SELECT * FROM quests WHERE user_id = :user AND reminder_time IS NOT NULL AND reminder_time != ''");
     $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
     $result = $stmt->execute();
 
     $pendingReminders = [];
     while ($quest = $result->fetchArray(SQLITE3_ASSOC)) {
-        // Check if already completed today
         $checkStmt = $db->prepare("SELECT completed FROM quest_completions WHERE quest_id = :quest AND user_id = :user AND completion_date = :date");
         $checkStmt->bindValue(':quest', $quest['id'], SQLITE3_TEXT);
         $checkStmt->bindValue(':user', $userId, SQLITE3_TEXT);
@@ -861,7 +939,6 @@ if ($method === 'GET' && $action === 'pending_reminders') {
     }
 
     $db->close();
-
     echo json_encode([
         'reminders' => $pendingReminders,
         'count' => count($pendingReminders)
@@ -869,15 +946,9 @@ if ($method === 'GET' && $action === 'pending_reminders') {
     exit;
 }
 
-// ============ PASSKEY ============
+// ============ QUEST MANAGEMENT ============
 
-// GET passkey status
-if ($method === 'GET' && $action === 'passkey_status') {
-    echo json_encode(['registered' => file_exists(DATA_DIR . '/credential.json')]);
-    exit;
-}
-
-// POST update all non-calendar quests (from manager)
+// POST update all non‑calendar quests (from manager)
 if ($method === 'POST' && $action === 'update_quests') {
     $data = json_decode(file_get_contents('php://input'), true);
     $quests = $data['quests'] ?? [];
@@ -886,12 +957,10 @@ if ($method === 'POST' && $action === 'update_quests') {
     $db = get_db();
     $db->exec("BEGIN TRANSACTION");
 
-    // Delete all existing non-calendar quests for this user
     $stmt = $db->prepare("DELETE FROM quests WHERE user_id = :user AND from_calendar = 0");
     $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
     $stmt->execute();
 
-    // Insert updated quests
     $insert = $db->prepare("INSERT INTO quests (id, user_id, name, type, points, schedule, reminder_time, days_visible, specific_dates, group_name, group_step, from_calendar)
         VALUES (:id, :user, :name, :type, :points, :schedule, :reminder, :days_visible, :specific_dates, :group_name, :group_step, 0)");
 
@@ -917,14 +986,13 @@ if ($method === 'POST' && $action === 'update_quests') {
 
     $db->exec("COMMIT");
     $db->close();
-
     echo json_encode(['ok' => true, 'saved' => count($quests)]);
     exit;
 }
 
 // ============ ICAL PROXY ============
 
-// Proxy for iCal feeds (bypass CORS)
+// GET proxy for iCal feeds (bypass CORS)
 if ($method === 'GET' && $action === 'ical_proxy') {
     $url = $_GET['url'] ?? '';
     if (empty($url)) {
@@ -933,14 +1001,12 @@ if ($method === 'GET' && $action === 'ical_proxy') {
         exit;
     }
 
-    // Validate URL (only allow http/https)
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid URL']);
         exit;
     }
 
-    // Fetch the iCal file
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -972,7 +1038,6 @@ if ($method === 'GET' && $action === 'calendar_quests') {
     $result = $stmt->execute();
     $quests = [];
     while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-        // Parse JSON fields if any
         if ($row['days_visible']) $row['days_visible'] = json_decode($row['days_visible'], true);
         if ($row['specific_dates']) $row['specific_dates'] = json_decode($row['specific_dates'], true);
         $quests[] = $row;
@@ -1004,18 +1069,42 @@ if ($method === 'PUT' && $action === 'calendar_quests') {
         $stmt->execute();
     }
 
-    // ❌ REMOVED the deletion of old calendar quests
-    // Calendar quests are only removed when they expire (handled by daily reset)
-
     $db->exec("COMMIT");
     $db->close();
     echo json_encode(['ok' => true, 'saved' => count($quests)]);
     exit;
 }
 
+// POST delete a single calendar quest
+if ($method === 'POST' && $action === 'delete_calendar_quest') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $id = $data['id'] ?? '';
+    $db = get_db();
+    $userId = get_user_id();
+    $stmt = $db->prepare("DELETE FROM quests WHERE id = :id AND user_id = :user AND type = 'calendar'");
+    $stmt->bindValue(':id', $id, SQLITE3_TEXT);
+    $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
+    $stmt->execute();
+    $db->close();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// POST delete all calendar quests
+if ($method === 'POST' && $action === 'delete_all_calendar_quests') {
+    $db = get_db();
+    $userId = get_user_id();
+    $stmt = $db->prepare("DELETE FROM quests WHERE user_id = :user AND type = 'calendar'");
+    $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
+    $stmt->execute();
+    $db->close();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 // ============ THEME MANAGEMENT ============
 
-// GET get themes
+// GET current theme
 if ($method === 'GET' && $action === 'get_theme') {
     $file = DATA_DIR . '/themes.json';
     if (file_exists($file)) {
@@ -1027,7 +1116,7 @@ if ($method === 'GET' && $action === 'get_theme') {
     exit;
 }
 
-// POST set theme
+// POST set active theme
 if ($method === 'POST' && $action === 'set_theme') {
     $input = json_decode(file_get_contents('php://input'), true);
     $themeId = $input['theme'] ?? 'default';
@@ -1039,7 +1128,7 @@ if ($method === 'POST' && $action === 'set_theme') {
     exit;
 }
 
-// POST save new custom theme
+// POST save custom theme (from color picker)
 if ($method === 'POST' && $action === 'save_custom_theme') {
     $input = json_decode(file_get_contents('php://input'), true);
     $colors = $input['colors'] ?? [];
@@ -1061,36 +1150,28 @@ if ($method === 'POST' && $action === 'save_custom_theme') {
     exit;
 }
 
-// POST save a new theme preset
+// POST save a named theme preset
 if ($method === 'POST' && $action === 'save_theme_preset') {
     $input = json_decode(file_get_contents('php://input'), true);
     $presetName = $input['name'] ?? 'My Theme';
     $colors = $input['colors'] ?? [];
 
-    // Generate a unique ID and filename
     $id = 'preset_' . time();
     $fileName = 'theme-' . $id . '.css';
     $filePath = __DIR__ . '/css/' . $fileName;
 
-    // Build the CSS content
     $css = ":root {\n";
     foreach ($colors as $var => $val) {
         $css .= "    $var: $val;\n";
     }
     $css .= "}\n";
 
-    // Ensure css directory exists
     $cssDir = __DIR__ . '/css';
     if (!is_dir($cssDir)) mkdir($cssDir, 0755, true);
-
-    // Write the CSS file
     file_put_contents($filePath, $css);
 
-    // Load existing themes.json
     $themesFile = DATA_DIR . '/themes.json';
     $themes = file_exists($themesFile) ? json_decode(file_get_contents($themesFile), true) : ['themes' => [], 'activeTheme' => 'default'];
-
-    // Add new preset
     $themes['themes'][] = [
         'id' => $id,
         'name' => $presetName,
@@ -1103,14 +1184,45 @@ if ($method === 'POST' && $action === 'save_theme_preset') {
     exit;
 }
 
+// ============ STATS ACCESS ============
+
+// GET stats access code (for external stats page)
 if ($method === 'GET' && $action === 'stats_access_code') {
     header('Content-Type: application/json');
     echo json_encode(['code' => STATS_ACCESS_CODE]);
     exit;
 }
 
-// ============ FALLBACK ============
+// ============ DAILY RESET TRACKING ============
 
-// If we get here, return error
+// GET last reset date
+if ($method === 'GET' && $action === 'last_reset') {
+    $db = get_db();
+    $userId = get_user_id();
+    $stmt = $db->prepare("SELECT last_reset FROM users WHERE id = :id");
+    $stmt->bindValue(':id', $userId, SQLITE3_TEXT);
+    $result = $stmt->execute();
+    $row = $result->fetchArray(SQLITE3_ASSOC);
+    $db->close();
+    echo json_encode(['lastReset' => $row['last_reset'] ?? null]);
+    exit;
+}
+
+// POST update last reset date
+if ($method === 'POST' && $action === 'update_last_reset') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $db = get_db();
+    $userId = get_user_id();
+    $lastReset = $data['lastReset'] ?? null;
+    $stmt = $db->prepare("UPDATE users SET last_reset = :lastReset WHERE id = :id");
+    $stmt->bindValue(':lastReset', $lastReset, SQLITE3_TEXT);
+    $stmt->bindValue(':id', $userId, SQLITE3_TEXT);
+    $stmt->execute();
+    $db->close();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ============ FALLBACK ============
 http_response_code(404);
 echo json_encode(['error' => 'No matching endpoint', 'action' => $action, 'method' => $method]);
