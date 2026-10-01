@@ -417,139 +417,17 @@
             });
         },
 
-        matchesDatePattern(pattern, date) {
-            if (!pattern) return false;
-            if (pattern === '&&/&&/&&&&') return true;
-            const day = String(date.getUTCDate()).padStart(2, '0');
-            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-            const year = date.getUTCFullYear();
-            const parts = pattern.split('/');
-            if (parts.length !== 3) return false;
-            const matchDay = parts[0] === '&&' || parts[0] === day;
-            const matchMonth = parts[1] === '&&' || parts[1] === month;
-            const matchYear = parts[2] === '&&&&' || parts[2] === year.toString();
-            return matchDay && matchMonth && matchYear;
-        },
-
-        isSpecificDateMatch(quest, date) {
-            if (quest.specific_dates && quest.specific_dates.length > 0) {
-                for (const pattern of quest.specific_dates) {
-                    if (this.matchesDatePattern(pattern, date)) return true;
+        async getVisibleQuestsForDate(dateStr) {
+            try {
+                const res = await this.fetchWithStatsCode(`api.php?action=visible_quests&date=${dateStr}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    return data.quests || [];
                 }
+            } catch(e) {
+                console.warn(`Failed to fetch visible quests for ${dateStr}`, e);
             }
-            return false;
-        },
-
-        isBiWeeklyMatch(quest, date) {
-            if (!quest.schedule || !quest.schedule.toLowerCase().includes('every other')) return false;
-            const startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-            const pastDays = (date - startOfYear) / 86400000;
-            const weekNumber = Math.ceil((pastDays + startOfYear.getUTCDay() + 1) / 7);
-            const scheduleLower = quest.schedule.toLowerCase();
-            if (scheduleLower.includes('even') && weekNumber % 2 === 0) return true;
-            if (scheduleLower.includes('odd') && weekNumber % 2 === 1) return true;
-            return false;
-        },
-
-        getTargetWeekdayFromSchedule(schedule) {
-            const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-            for (const day of weekdays) {
-                if (schedule.toLowerCase().includes(day.toLowerCase())) return day;
-            }
-            return null;
-        },
-
-        isNthWeekdayMatch(quest, date) {
-            if (!quest.schedule) return false;
-
-            const targetDay = this.getTargetWeekdayFromSchedule(quest.schedule);
-            if (!targetDay) return false;
-
-            const todayName = date.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
-            if (todayName !== targetDay) return false;
-
-            const dayOfMonth = date.getUTCDate();
-            const firstOfMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-            const firstDayWeekday = firstOfMonth.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
-            const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const targetIndex = weekdays.indexOf(targetDay);
-            const firstIndex = weekdays.indexOf(firstDayWeekday);
-            let occurrence = Math.ceil((dayOfMonth + (firstIndex - targetIndex)) / 7);
-            if (occurrence < 1) occurrence = 1;
-            if (occurrence > 5) occurrence = 5;
-
-            const scheduleLower = quest.schedule.toLowerCase();
-            if (scheduleLower.includes('2nd') && scheduleLower.includes('4th') && (occurrence === 2 || occurrence === 4)) return true;
-            if (scheduleLower.includes('1st') && scheduleLower.includes('3rd') && (occurrence === 1 || occurrence === 3)) return true;
-            if (scheduleLower.includes('1st') && occurrence === 1) return true;
-            if (scheduleLower.includes('2nd') && occurrence === 2) return true;
-            if (scheduleLower.includes('3rd') && occurrence === 3) return true;
-            if (scheduleLower.includes('4th') && occurrence === 4) return true;
-            if (scheduleLower.includes('5th') && occurrence === 5) return true;
-            return false;
-        },
-
-        isQuestVisibleOnDate(quest, date) {
-            if (quest.type === 'calendar') return false;
-
-            if (quest.specific_dates && Array.isArray(quest.specific_dates) && quest.specific_dates.length > 0) {
-                for (const pattern of quest.specific_dates) {
-                    if (this.matchesDatePattern(pattern, date)) return true;
-                }
-                return false;
-            }
-
-            if (quest.schedule && quest.schedule.includes('/')) {
-                const looksLikeDate = quest.schedule.match(/\d{2}\/\d{2}\/&&&&|\d{2}\/\d{2}\/\d{4}/);
-                if (looksLikeDate && this.matchesDatePattern(quest.schedule, date)) return true;
-                if (looksLikeDate) return false;
-            }
-
-            if (this.isBiWeeklyMatch(quest, date)) return true;
-            if (this.isNthWeekdayMatch(quest, date)) return true;
-
-            if (quest.schedule && quest.schedule.toLowerCase() === 'every weekend') {
-                const utcWeekday = date.getUTCDay();
-                return (utcWeekday === 6 || utcWeekday === 0);
-            }
-
-            if (quest.days_visible && Array.isArray(quest.days_visible) && quest.days_visible.length) {
-                const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-                const utcWeekday = weekdayNames[date.getUTCDay()];
-                return quest.days_visible.includes(utcWeekday);
-            }
-
-            if (quest.schedule) {
-                const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-                const scheduleDay = quest.schedule.charAt(0).toUpperCase() + quest.schedule.slice(1).toLowerCase();
-                if (dayNames.includes(scheduleDay)) {
-                    const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-                    const utcWeekday = weekdayNames[date.getUTCDay()];
-                    return scheduleDay === utcWeekday;
-                }
-            }
-
-            return true;
-        },
-
-        getVisibleQuestsForDate(dateStr) {
-            const targetDate = new Date(dateStr + 'T00:00:00Z');
-            if (isNaN(targetDate.getTime())) return [];
-
-            return this.quests.filter(quest => {
-                if (quest.type === 'calendar') {
-                    if (!quest.expires) return false;
-                    let expiryDate;
-                    if (quest.expires.includes('-')) {
-                        expiryDate = new Date(quest.expires + 'T00:00:00Z');
-                    } else {
-                        expiryDate = new Date(quest.expires);
-                        expiryDate = new Date(Date.UTC(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate()));
-                    }
-                    return expiryDate.getTime() === targetDate.getTime();
-                }
-                return this.isQuestVisibleOnDate(quest, targetDate);
-            });
+            return [];
         },
 
         sortQuestsByReminderTime(quests) {
@@ -584,40 +462,67 @@
             const daysData = [];
             for (const date of days) {
                 try {
+                    // ── Completions from history (source of truth — includes deleted quests) ──
+                    const historyCompleted = this.historyData.filter(
+                        h => h.date === date && h.type === 'quest_complete'
+                    );
+                    const historyCompletedNames = new Set(
+                        historyCompleted.map(h => h.description.replace(/^Completed quest:\s*/i, '').trim())
+                    );
+
+                    // ── Visible quests for this date (currently-existing quests only) ──
+                    const visibleQuests = await this.getVisibleQuestsForDate(date);
+
+                    // ── Completion status for visible quests ──
                     const compRes = await this.fetchWithStatsCode(`api.php?action=completions&date=${date}`);
-                    if (!compRes.ok) throw new Error(`Completions fail for ${date}`);
-                    const compData = await compRes.json();
+                    const compData = compRes.ok ? await compRes.json() : {};
                     const completions = compData.completions || {};
 
-                    const visibleQuests = this.getVisibleQuestsForDate(date);
+                    // ── Build quest list ──
+                    // 1. Visible quests with completion status
+                    const visibleItems = visibleQuests.map(q => ({
+                        id: q.id,
+                        name: q.name,
+                        points: q.points || 1,
+                        type: q.type || 'side',
+                        reminder_time: q.reminder_time || null,
+                        completed: completions[q.id]?.completed === true
+                    }));
 
-                    const calendarQuests = [];
-                    const mainQuests = [];
-                    const sideQuests = [];
-                    for (const quest of visibleQuests) {
-                        const qWithStatus = {
-                            ...quest,
-                            completed: completions[quest.id]?.completed === true
-                        };
-                        if (quest.type === 'calendar') calendarQuests.push(qWithStatus);
-                        else if (quest.type === 'main') mainQuests.push(qWithStatus);
-                        else if (quest.type === 'side') sideQuests.push(qWithStatus);
-                    }
+                    // 2. Completed quests from history NOT in the visible list (deleted quests)
+                    const visibleNames = new Set(visibleQuests.map(q => q.name));
+                    const deletedItems = historyCompleted
+                        .filter(h => {
+                            const name = h.description.replace(/^Completed quest:\s*/i, '').trim();
+                            return !visibleNames.has(name);
+                        })
+                        .map(h => ({
+                            id: null,
+                            name: h.description.replace(/^Completed quest:\s*/i, '').trim(),
+                            points: h.points || 1,
+                            type: 'deleted',
+                            reminder_time: null,
+                            completed: true
+                        }));
 
-                    const sortedCalendar = this.sortQuestsByReminderTime(calendarQuests);
-                    const sortedMain = this.sortQuestsByReminderTime(mainQuests);
-                    const sortedSide = this.sortQuestsByReminderTime(sideQuests);
-                    const allQuests = [...sortedCalendar, ...sortedMain, ...sortedSide];
+                    // Sort: calendar first, then main, then side, then deleted; by reminder time within groups
+                    const typeOrder = { calendar: 0, main: 1, side: 2, deleted: 3 };
+                    const allQuestItems = [...visibleItems, ...deletedItems].sort((a, b) => {
+                        const tA = typeOrder[a.type] ?? 99, tB = typeOrder[b.type] ?? 99;
+                        if (tA !== tB) return tA - tB;
+                        return this.sortQuestsByReminderTime([a, b])[0] === a ? -1 : 1;
+                    });
 
-                    const otherItems = this.historyData.filter(h => h.date === date && (h.type === 'achievement' || h.type === 'reward_redeem' || h.type === 'bonus'));
-                    otherItems.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    const otherItems = this.historyData.filter(h =>
+                        h.date === date && (h.type === 'achievement' || h.type === 'reward_redeem' || h.type === 'bonus')
+                    ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-                    const dayPoints = this.historyData.filter(h => h.date === date && h.points > 0).reduce((s,h)=>s+h.points,0);
-                    const completedCount = allQuests.filter(q => q.completed).length;
-                    const rewardCount = this.historyData.filter(h => h.date === date && h.type === 'reward_redeem').length;
-                    const achievementCount = this.historyData.filter(h => h.date === date && h.type === 'achievement').length;
+                    const dayPoints = this.historyData.filter(h => h.date === date && h.points > 0).reduce((s, h) => s + h.points, 0);
+                    const completedCount = allQuestItems.filter(q => q.completed).length;
+                    const rewardCount = otherItems.filter(h => h.type === 'reward_redeem').length;
+                    const achievementCount = otherItems.filter(h => h.type === 'achievement').length;
 
-                    daysData.push({ date, quests: allQuests, otherItems, totalPoints: dayPoints, completedCount, rewardCount, achievementCount });
+                    daysData.push({ date, quests: allQuestItems, otherItems, totalPoints: dayPoints, completedCount, rewardCount, achievementCount });
                 } catch(e) {
                     console.warn(`Failed for ${date}`, e);
                     daysData.push({ date, quests: [], otherItems: [], totalPoints: 0, completedCount: 0, rewardCount: 0, achievementCount: 0, error: true });
@@ -639,10 +544,12 @@
                     const icon = quest.completed ? '✅' : '❌';
                     const completedClass = quest.completed ? 'completed' : '';
                     const reminderHtml = quest.reminder_time ? `⏰ ${quest.reminder_time}` : '';
-                    let typeLabel = '';
-                    if (quest.type === 'calendar') typeLabel = 'calendar';
-                    else if (quest.type === 'main') typeLabel = 'main';
-                    else if (quest.type === 'side') typeLabel = 'side';
+                    let typeLabel = quest.type || '';
+                    let tagStyle = '';
+                    if (quest.type === 'deleted') {
+                        typeLabel = 'deleted';
+                        tagStyle = 'style="opacity:0.5;"';
+                    }
                     return `
                         <div class="quest-log-item ${completedClass}">
                             <div class="quest-status-icon">${icon}</div>
@@ -650,52 +557,35 @@
                                 <div class="quest-log-name">${this.escapeHtml(quest.name)}</div>
                                 <div class="quest-log-details">${reminderHtml}</div>
                             </div>
-                            <span class="quest-type-tag">${typeLabel}</span>
-                            <div class="quest-log-points">${quest.points || 1} pts</div>
+                            <span class="quest-type-tag" ${tagStyle}>${typeLabel}</span>
+                            <div class="quest-log-points">${quest.points} pts</div>
                         </div>
                     `;
                 }).join('');
 
                 const otherHtml = day.otherItems.map(item => {
-                    let icon = '';
-                    let typeLabel = '';
-                    let description = item.description;
-                    let points = item.points;
-                    if (item.type === 'achievement') {
-                        icon = '🏆';
-                        typeLabel = 'achievement';
-                    } else if (item.type === 'reward_redeem') {
-                        icon = '🍫';
-                        typeLabel = 'reward';
-                    } else if (item.type === 'bonus') {
-                        icon = '✨';
-                        typeLabel = 'bonus';
-                    } else {
-                        icon = '📝';
-                        typeLabel = 'other';
-                    }
-                    const pointsText = points > 0 ? `${points} pts` : `${points} pts`;
+                    let icon = item.type === 'achievement' ? '🏆' : item.type === 'reward_redeem' ? '🍫' : item.type === 'bonus' ? '✨' : '📝';
+                    let typeLabel = item.type === 'achievement' ? 'achievement' : item.type === 'reward_redeem' ? 'reward' : item.type === 'bonus' ? 'bonus' : 'other';
                     return `
                         <div class="quest-log-item" style="border-left-color: var(--accent);">
                             <div class="quest-status-icon">${icon}</div>
                             <div class="quest-log-info">
-                                <div class="quest-log-name">${this.escapeHtml(description)}</div>
+                                <div class="quest-log-name">${this.escapeHtml(item.description)}</div>
                                 <div class="quest-log-details"></div>
                             </div>
                             <span class="quest-type-tag">${typeLabel}</span>
-                            <div class="quest-log-points">${pointsText}</div>
+                            <div class="quest-log-points">${item.points} pts</div>
                         </div>
                     `;
                 }).join('');
 
-                const noContentHtml = (day.quests.length === 0 && day.otherItems.length === 0) ? '<div class="empty-state">✨ No activity this day.</div>' : '';
+                const noContentHtml = (day.quests.length === 0 && day.otherItems.length === 0)
+                    ? '<div class="empty-state">✨ No activity this day.</div>' : '';
 
                 html += `
                     <div class="day-group">
                         <div class="day-header" onclick="stats.toggleDay(this)">
-                            <div class="day-header-left">
-                                <h3>${dateFormatted}</h3>
-                            </div>
+                            <div class="day-header-left"><h3>${dateFormatted}</h3></div>
                             <div class="day-stats-center">
                                 <span>✅ ${day.completedCount}</span>
                                 <span>⭐️ +${day.totalPoints}</span>

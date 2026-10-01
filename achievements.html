@@ -99,12 +99,17 @@
         async loadData() {
             try {
                 const res = await fetch('api.php?action=achievements');
-                if (res.ok) {
-                    const data = await res.json();
-                    this.allAchievements = data.all || [];
-                    this.earnedIds = data.earned || [];
+                if (!res.ok) {
+                    console.warn('❌ achievements fetch failed:', res.status, await res.text());
+                    return;
                 }
-            } catch(e) { console.error('Failed to load achievements:', e); }
+                const data = await res.json();
+                this.allAchievements = data.all || [];
+                this.earnedIds = data.earned || [];
+                console.log('✅ Achievements loaded:', this.allAchievements.length, 'earned:', this.earnedIds.length);
+            } catch(e) {
+                console.error('💥 loadData() error:', e);
+            }
         },
 
         renderStats() {
@@ -119,10 +124,19 @@
         },
 
         renderCategories() {
-            const categories = ['all', 'quest', 'streak', 'hydration', 'timing'];
+            const categories = [
+                { key: 'all',       label: 'All' },
+                { key: 'quest',     label: 'Quests' },
+                { key: 'streak',    label: 'Streaks' },
+                { key: 'hydration', label: 'Hydration' },
+                { key: 'timing',    label: 'Timing' },
+                { key: 'points',    label: 'Points' },
+                { key: 'progress',  label: 'Progress' },
+                { key: 'rewards',   label: 'Rewards' },
+            ];
             const container = document.getElementById('categoryTabs');
             container.innerHTML = categories.map(cat => `
-                <div class="category-tab ${this.currentCategory === cat ? 'active' : ''}" data-category="${cat}">${cat.charAt(0).toUpperCase() + cat.slice(1)}</div>
+                <div class="category-tab ${this.currentCategory === cat.key ? 'active' : ''}" data-category="${cat.key}">${cat.label}</div>
             `).join('');
             document.querySelectorAll('.category-tab').forEach(tab => {
                 tab.addEventListener('click', () => {
@@ -135,11 +149,14 @@
 
         getCategory(achievement) {
             const type = achievement.requirement_type;
-            if (type === 'quest_count') return 'quest';
-            if (type === 'streak') return 'streak';
-            if (type === 'lemonade_days') return 'hydration';
+            if (type === 'quest_count')    return 'quest';
+            if (type === 'streak')         return 'streak';
+            if (type === 'lemonade_days')  return 'hydration';
             if (type === 'morning_quests' || type === 'night_quests') return 'timing';
-            return 'other';
+            if (type === 'total_points')   return 'points';
+            if (type === 'active_days')    return 'progress';
+            if (type === 'reward_redeems') return 'rewards';
+            return 'quest'; // fallback
         },
 
         renderAchievements() {

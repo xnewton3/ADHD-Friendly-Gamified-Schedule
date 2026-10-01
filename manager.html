@@ -47,6 +47,7 @@
             overflow-y: auto;
             overflow-x: auto;
         }
+        /* FLEX‑BASED QUEST ROWS – NO WRAPPING */
         .quest-row {
             display: flex;
             flex-wrap: nowrap;
@@ -68,12 +69,15 @@
         .quest-row .quest-edit,
         .quest-row .quest-delete { flex: 0 0 36px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--dark-grey); border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
         .quest-row .quest-delete { background: var(--error); color: white; }
+
+        /* Smaller desktop screens */
         @media (max-width: 1200px) {
             .quest-row .quest-type { flex-basis: 60px; }
             .quest-row .quest-points-input { flex-basis: 60px; width: 60px; }
             .quest-row .quest-schedule { flex-basis: 80px; width: 80px; }
             .quest-row .quest-reminder { flex-basis: 80px; width: 80px; }
         }
+        /* Hide less important columns on medium screens to avoid wrap */
         @media (max-width: 1000px) {
             .quest-row .quest-schedule,
             .quest-row .quest-points-input,
@@ -81,18 +85,34 @@
             .quest-row .quest-type { display: none; }
             .quest-row .quest-name { flex: 1 1 auto; }
         }
+        /* Mobile adjustments */
         @media (max-width: 600px) {
             .quest-row .drag-handle { flex-basis: 30px; }
             .quest-row .quest-edit,
             .quest-row .quest-delete { flex-basis: 32px; width: 32px; height: 32px; }
             .add-feed-form, .add-shop-form { flex-direction: column; }
         }
+
+        /* Add Quest form – single column on iPhone-width screens */
+        @media (max-width: 480px) {
+            .add-quest-form {
+                grid-template-columns: 1fr;
+            }
+            .add-quest-form .form-group {
+                grid-column: 1 !important;
+            }
+            /* Collapse the nested schedule selects grid */
+            .add-quest-form .form-group > div {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
         .add-quest-section { background: var(--dark-grey-2); border: 1px solid var(--dark-grey-3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
         .add-quest-section h3 { color: var(--jade); margin-bottom: 1rem; }
         .add-quest-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
         .add-quest-form input, .add-quest-form select { padding: 0.75rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); font-family: inherit; }
         .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .nav-button, .save-btn, .reload-btn, .logout-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .nav-button, .save-btn, .reload-btn { background: var(--dark-grey-3); color: var(--cream); border: 1px solid var(--olive); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; }
         .nav-actions { display: flex; gap: 0.75rem; }
         .feed-item {
             background: var(--dark-grey-3);
@@ -114,7 +134,7 @@
         .modal-overlay.hidden { display: none; }
         .modal-content { background: var(--dark-grey-2); border: 2px solid var(--jade); border-radius: 12px; padding: 2rem; width: 90%; max-width: 500px; }
         .modal-content h3 { color: var(--jade); margin-bottom: 1rem; }
-        .modal-content input, .modal-content select { width: 100%; padding: 0.75rem; margin-bottom: 1rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); }
+        .modal-content input:not([type="checkbox"]), .modal-content select { width: 100%; padding: 0.75rem; margin-bottom: 1rem; background: var(--dark-grey); border: 1px solid var(--dark-grey-3); border-radius: 4px; color: var(--cream); }
         .modal-buttons { display: flex; gap: 1rem; justify-content: flex-end; }
         .calendar-quest-item {
             background: var(--dark-grey-3);
@@ -127,17 +147,42 @@
             align-items: center;
             flex-wrap: wrap;
             gap: 0.75rem;
-        }
-        .calendar-quest-name { font-weight: 600; color: var(--cream); }
-        .calendar-quest-details { font-size: 0.75rem; color: var(--olive-light); margin-top: 0.25rem; }
-        .calendar-quest-points { display: inline-block; background: var(--jade); color: var(--dark-grey); padding: 0.2rem 0.5rem; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
-        .theme-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
-        .theme-card { background: var(--dark-grey-3); border: 2px solid var(--dark-grey-3); border-radius: 12px; padding: 0.75rem; cursor: pointer; text-align: center; }
-        .theme-card.active { border-color: var(--jade); background: var(--dark-grey-2); }
-        .theme-name { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85rem; }
-        .color-dot { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--dark-grey); }
-        .shop-item-info { display: flex; flex-direction: column; gap: 0.25rem; }
-        .shop-item-cost { font-size: 0.7rem; color: var(--olive-light); }
+            }
+            .calendar-quest-name { font-weight: 600; color: var(--cream); }
+            .calendar-quest-details { font-size: 0.75rem; color: var(--olive-light); margin-top: 0.25rem; }
+            .calendar-quest-points { display: inline-block; background: var(--jade); color: var(--dark-grey); padding: 0.2rem 0.5rem; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+            .theme-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+            .theme-card { background: var(--dark-grey-3); border: 2px solid var(--dark-grey-3); border-radius: 12px; padding: 0.75rem; cursor: pointer; text-align: center; }
+            .theme-card.active { border-color: var(--jade); background: var(--dark-grey-2); }
+            .theme-name { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85rem; }
+            .color-dot { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--dark-grey); }
+            .shop-item-info { display: flex; flex-direction: column; gap: 0.25rem; }
+            .shop-item-cost { font-size: 0.7rem; color: var(--olive-light); }
+
+            /* ── Unified input/select baseline ──
+               Browsers hand <select> height off to the OS — padding is ignored.
+               We override that here so inputs and selects are pixel-identical. */
+            input:not([type="file"]):not([type="color"]):not([type="checkbox"]),
+            select {
+                font-family: inherit;
+                font-size: 1rem;
+                font-weight: 400;
+                line-height: 1.5;
+                /* Force identical height: padding-top + line-height + padding-bottom + borders */
+                height: calc(0.75rem * 2 + 1.5rem + 2px);
+            }
+            /* Checkboxes: don't inherit the tall height/padding */
+            input[type="checkbox"] { height: auto; width: auto; padding: 0; margin: 0; }
+            /* Kill the native OS height control on select, then restore the arrow */
+            select {
+                -webkit-appearance: none;
+                appearance: none;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 10'%3E%3Cpath fill='%23999' d='M0 0l8 10 8-10z'/%3E%3C/svg%3E");
+                background-repeat: no-repeat;
+                background-position: right 0.65rem center;
+                background-size: 10px 6px;
+                padding-right: 2rem;
+            }
     </style>
 </head>
 <div class="notch-fix"></div>
@@ -157,7 +202,6 @@
         <div class="nav-actions">
             <button onclick="manager.saveAll()" class="save-btn">💾 Save All</button>
             <button onclick="window.location.reload()" class="reload-btn">🔄 Refresh</button>
-            <button onclick="manager.logout()" class="logout-btn">🚪 Logout</button>
         </div>
     </div>
     <div class="header"><h1>⚙️ Quest Manager</h1></div>
@@ -170,11 +214,33 @@
             <input type="number" id="newShopCost" placeholder="⭐️ Points" min="1" value="10">
             <button onclick="manager.addShopItem()">➕ Add</button>
         </div>
+        <div style="border-top:1px solid var(--dark-grey-3); margin-top:1rem; padding-top:1rem;">
+            <label style="display:flex; align-items:flex-start; gap:0.75rem; cursor:pointer;">
+                <input type="checkbox" id="inflationToggle" onchange="manager.setInflation(this.checked)" style="margin-top:3px;">
+                <div>
+                    <div style="font-weight:600; color:var(--cream);">💹 Price Inflation</div>
+                    <div style="font-size:0.8rem; color:var(--olive-light); margin-top:0.25rem; line-height:1.5;">
+                        When your points exceed twice the cost of your most expensive item, all prices rise by half the excess (rounded up). Prices never drop below what you originally set.
+                        <br>Example: most expensive item costs 250 pts → once you hit 500+ pts, prices start inflating. At 510 pts: +5 to every item.
+                    </div>
+                </div>
+            </label>
+        </div>
     </div>
 
     <div class="settings-panel">
         <h2>👤 Profile</h2>
         <div class="settings-grid"><div class="form-group"><label>Profile Picture</label><input type="file" id="avatarInput" accept="image/*" onchange="manager.updateAvatar(event)"></div></div>
+    </div>
+
+    <div class="settings-panel">
+        <h2>🕐 Timezone</h2>
+        <div class="form-group">
+            <label for="timezoneSelect" style="color:var(--olive-light); font-size:0.9rem; margin-bottom:0.4rem; display:block;">Quest reset timezone — resets at 3:00 AM</label>
+            <select id="timezoneSelect" onchange="manager.saveTimezone(this.value)" style="width:100%;"></select>
+            <div id="tzClock" style="margin-top:0.75rem; font-family:monospace; font-size:2rem; font-weight:600; letter-spacing:0.06em; color:var(--jade);"></div>
+            <div id="timezoneHint" class="form-group-hint" style="margin-top:0.4rem;">Quests reset at 3:00 AM in the selected timezone.</div>
+        </div>
     </div>
 
     <div class="settings-panel">
@@ -204,6 +270,60 @@
         <div class="form-group-hint">💡 Themes sync across your devices.</div>
     </div>
 
+    <div class="settings-panel">
+        <h2>🔗 Webhook / External API</h2>
+        <p style="font-size:0.85rem; color:var(--olive-light); margin-bottom:1rem;">Use this key to connect Home Assistant or any external service. Keep it secret.</p>
+        <div class="form-group" style="margin-bottom:0.75rem;">
+            <label style="font-size:0.85rem; color:var(--olive-light); display:block; margin-bottom:0.4rem;">API Key</label>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                <input type="password" id="webhookKeyDisplay" readonly style="flex:1; font-family:monospace; font-size:0.85rem;" placeholder="No key yet — click Generate">
+                <button onclick="manager.toggleWebhookKeyVisibility()" style="white-space:nowrap; flex-shrink:0;">👁 Show</button>
+                <button onclick="manager.copyWebhookKey()" style="white-space:nowrap; flex-shrink:0;">📋 Copy</button>
+            </div>
+        </div>
+        <button onclick="manager.generateWebhookKey()" class="danger" style="margin-bottom:1rem;">🔄 Generate New Key</button>
+        <details style="font-size:0.8rem; color:var(--olive-light);">
+            <summary style="cursor:pointer; margin-bottom:0.5rem;">📖 Home Assistant example YAML</summary>
+            <pre id="haYamlExample" style="background:var(--dark-grey-3); padding:0.75rem; border-radius:6px; overflow-x:auto; font-size:0.75rem; line-height:1.5; white-space:pre-wrap;"></pre>
+        </details>
+    </div>
+
+    <div class="settings-panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 style="margin:0;">📌 Day Selection Presets</h2>
+            <button onclick="manager.openPresetModal()">➕ Add Preset</button>
+        </div>
+        <p style="font-size:0.8rem; color:var(--olive-light); margin-bottom:0.75rem;">Presets appear as quick-select buttons in the Select Days form. Deleting a preset doesn't affect existing quests using it.</p>
+        <div id="presetsList"></div>
+    </div>
+
+    <!-- Preset modal -->
+    <div id="addPresetModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>📌 New Day Preset</h3>
+            <div class="form-group" style="margin-bottom:0.75rem;">
+                <label>Preset name</label>
+                <input type="text" id="presetNameInput" placeholder="e.g. Weekdays, DD Days, Work Week">
+            </div>
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label style="margin-bottom:0.5rem; display:block;">Select days:</label>
+                <div style="display:flex; flex-direction:column; gap:0.4rem;">
+                    <label><input type="checkbox" class="preset-day-cb" value="Monday"> Monday</label>
+                    <label><input type="checkbox" class="preset-day-cb" value="Tuesday"> Tuesday</label>
+                    <label><input type="checkbox" class="preset-day-cb" value="Wednesday"> Wednesday</label>
+                    <label><input type="checkbox" class="preset-day-cb" value="Thursday"> Thursday</label>
+                    <label><input type="checkbox" class="preset-day-cb" value="Friday"> Friday</label>
+                    <label><input type="checkbox" class="preset-day-cb" value="Saturday"> Saturday</label>
+                    <label><input type="checkbox" class="preset-day-cb" value="Sunday"> Sunday</label>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="secondary" onclick="manager.closePresetModal()">Cancel</button>
+                <button onclick="manager.savePreset()">Save Preset</button>
+            </div>
+        </div>
+    </div>
+
     <div class="add-quest-section">
         <h3>➕ Add New Quest</h3>
         <div class="add-quest-form">
@@ -211,7 +331,54 @@
             <select id="newQuestType"><option value="main">Main Quest</option><option value="side">Side Quest</option></select>
             <input type="number" id="newQuestPoints" min="1" value="1" placeholder="⭐️ Points">
             <input type="text" id="newQuestReminder" placeholder="⏰ Reminder time (e.g., 9:00 am)">
-            <input type="text" id="newQuestSchedule" placeholder="🗓️ Daily/Monday/2nd & 4th Saturday">
+
+            <div class="form-group" style="grid-column: span 2;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <!-- Day selector: daily / one-time / select-days / custom-date -->
+                    <select id="newScheduleType">
+                        <option value="daily" selected>Daily</option>
+                        <option value="onetime">One-Time</option>
+                        <option value="selectdays">Select Days</option>
+                        <option value="custom">Custom Date</option>
+                    </select>
+                    <!-- Week selector: only shown for Select Days -->
+                    <div id="newWeekSelectorWrap" style="display:none;">
+                        <select id="newSchedulePattern" style="width:100%;">
+                            <option value="every">Every Week</option>
+                            <option value="odd">Odd Weeks</option>
+                            <option value="even">Even Weeks</option>
+                            <option value="1st">1st Week (1,5,9…)</option>
+                            <option value="2nd">2nd Week (2,6,10…)</option>
+                            <option value="3rd">3rd Week (3,7,11…)</option>
+                            <option value="4th">4th Week (4,8,12…)</option>
+                        </select>
+                        <div id="newPatternHint" style="font-size:0.75rem; color:var(--olive-light); margin-top:0.25rem;"></div>
+                    </div>
+                </div>
+
+                <!-- Select-Days checkboxes -->
+                <div id="newSelectDaysContainer" style="display:none; margin-top:0.5rem;">
+                    <div style="display:flex; flex-direction:column; gap:0.35rem; margin-bottom:0.5rem;">
+                        <label><input type="checkbox" class="new-day-cb" value="Monday"> Monday</label>
+                        <label><input type="checkbox" class="new-day-cb" value="Tuesday"> Tuesday</label>
+                        <label><input type="checkbox" class="new-day-cb" value="Wednesday"> Wednesday</label>
+                        <label><input type="checkbox" class="new-day-cb" value="Thursday"> Thursday</label>
+                        <label><input type="checkbox" class="new-day-cb" value="Friday"> Friday</label>
+                        <label><input type="checkbox" class="new-day-cb" value="Saturday"> Saturday</label>
+                        <label><input type="checkbox" class="new-day-cb" value="Sunday"> Sunday</label>
+                    </div>
+                    <div id="newPresetsBar" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
+                </div>
+
+                <!-- Custom date field -->
+                <div id="customDateContainer" style="display:none; margin-top:0.5rem;">
+                    <input type="text" id="newScheduleCustom" placeholder="e.g., 15/&&/&&&& or 01/01/2026" style="width:100%;">
+                </div>
+
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
+                    <input type="checkbox" id="newQuestWeekly"> 📅 Weekly Quest — once per week only
+                </label>
+            </div>
         </div>
         <button onclick="manager.addQuest()">Add Quest</button>
     </div>
@@ -252,11 +419,62 @@
         <div class="modal-content">
             <h3>✏️ Edit Quest</h3>
             <input type="text" id="editQuestName" placeholder="🏷️ Quest name">
-            <select id="editQuestType"><option value="main">Main Quest</option><option value="side">Side Quest</option></select>
+            <select id="editQuestType">
+                <option value="main">Main Quest</option>
+                <option value="side">Side Quest</option>
+            </select>
             <input type="number" id="editQuestPoints" min="1" placeholder="⭐️ Points">
             <input type="text" id="editQuestReminder" placeholder="⏰ Reminder time (e.g., 9:00 am)">
-            <input type="text" id="editQuestSchedule" placeholder="🗓️ Schedule">
-            <div class="modal-buttons"><button class="secondary" onclick="manager.closeEditModal()">Cancel</button><button onclick="manager.saveEditQuest()">Save</button></div>
+
+            <!-- 👇 NEW schedule dropdowns matching the add form -->
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>📅 Schedule</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <select id="editScheduleType">
+                        <option value="daily">Daily</option>
+                        <option value="onetime">One-Time</option>
+                        <option value="selectdays">Select Days</option>
+                        <option value="custom">Custom Date</option>
+                    </select>
+                    <div id="editWeekSelectorWrap">
+                        <select id="editSchedulePattern" style="width:100%;">
+                            <option value="every">Every Week</option>
+                            <option value="odd">Odd Weeks</option>
+                            <option value="even">Even Weeks</option>
+                            <option value="1st">1st Week (1,5,9…)</option>
+                            <option value="2nd">2nd Week (2,6,10…)</option>
+                            <option value="3rd">3rd Week (3,7,11…)</option>
+                            <option value="4th">4th Week (4,8,12…)</option>
+                        </select>
+                        <div id="editPatternHint" style="font-size:0.75rem; color:var(--olive-light); margin-top:0.25rem;"></div>
+                    </div>
+                </div>
+
+                <div id="editSelectDaysContainer" style="display:none; margin-top:0.5rem;">
+                    <div style="display:flex; flex-direction:column; gap:0.35rem; margin-bottom:0.5rem;">
+                        <label><input type="checkbox" class="edit-day-cb" value="Monday"> Monday</label>
+                        <label><input type="checkbox" class="edit-day-cb" value="Tuesday"> Tuesday</label>
+                        <label><input type="checkbox" class="edit-day-cb" value="Wednesday"> Wednesday</label>
+                        <label><input type="checkbox" class="edit-day-cb" value="Thursday"> Thursday</label>
+                        <label><input type="checkbox" class="edit-day-cb" value="Friday"> Friday</label>
+                        <label><input type="checkbox" class="edit-day-cb" value="Saturday"> Saturday</label>
+                        <label><input type="checkbox" class="edit-day-cb" value="Sunday"> Sunday</label>
+                    </div>
+                    <div id="editPresetsBar" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
+                </div>
+
+                <div id="editCustomDateContainer" style="display:none; margin-top:0.5rem;">
+                    <input type="text" id="editScheduleCustom" placeholder="e.g., 15/&&/&&&& or 01/01/2026" style="width:100%;">
+                </div>
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.6rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
+                    <input type="checkbox" id="editQuestWeekly"> 📅 Weekly Quest — once per week only
+                </label>
+            </div>
+
+            <div class="modal-buttons">
+                <button class="secondary" onclick="manager.closeEditModal()">Cancel</button>
+                <button onclick="manager.saveEditQuest()">Save</button>
+            </div>
         </div>
     </div>
 
@@ -272,7 +490,6 @@
         </div>
     </div>
 </div>
-
 <script>
     const manager = {
         data: null,
@@ -285,40 +502,6 @@
         editingShopId: null,
         currentTheme: 'default',
         themesData: null,
-
-        // Auth check
-        async checkAuth() {
-            try {
-                const res = await fetch('api.php?action=login_status');
-                const data = await res.json();
-                if (!data.verified) {
-                    window.location.href = 'index.html';
-                    return false;
-                }
-                return true;
-            } catch(e) {
-                window.location.href = 'index.html';
-                return false;
-            }
-        },
-
-        async init() {
-            const authenticated = await this.checkAuth();
-            if (!authenticated) return;
-            await this.loadData();
-            await this.loadThemes();
-            this.renderQuests();
-            this.renderCalendarFeeds();
-            await this.loadStoredCalendarQuests();
-            this.renderShopItems();
-            this.setupCustomTheme();
-        },
-
-        logout() {
-            fetch('api.php?action=logout', { method: 'POST' }).finally(() => {
-                window.location.href = 'index.html';
-            });
-        },
 
         hashCode(str) {
             let hash = 0;
@@ -333,16 +516,287 @@
             return String(str || '').replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : m);
         },
 
-        async loadData() {
+        buildScheduleString(typeId, patternId, customId, dayClass) {
+            const type    = document.getElementById(typeId).value;
+            const pattern = document.getElementById(patternId)?.value || 'every';
+            const custom  = document.getElementById(customId)?.value.trim() || '';
+
+            if (type === 'daily')    return 'Daily';
+            if (type === 'onetime')  return 'One-time';
+            if (type === 'custom')   return custom || 'Daily';
+            if (type === 'selectdays') {
+                const days = Array.from(document.querySelectorAll('.' + dayClass + ':checked')).map(c => c.value);
+                if (!days.length) return 'Daily';
+                return pattern === 'every' ? 'days:' + days.join(',') : pattern + ' days:' + days.join(',');
+            }
+            return 'Daily';
+        },
+
+        getISOWeek(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+        },
+
+        updatePatternHint(selectId, hintId) {
+            const el = document.getElementById(hintId);
+            if (!el) return;
+            const pattern = document.getElementById(selectId)?.value;
+            if (!pattern || pattern === 'every') { el.textContent = ''; return; }
+            const weekNum = this.getISOWeek(new Date());
+            let weeksAway = 0;
+            switch (pattern) {
+                case 'odd':  weeksAway = (weekNum % 2 === 1) ? 0 : 1; break;
+                case 'even': weeksAway = (weekNum % 2 === 0) ? 0 : 1; break;
+                case '1st':  weeksAway = (1 - ((weekNum-1)%4) + 4) % 4; break;
+                case '2nd':  weeksAway = (2 - ((weekNum-1)%4) + 4) % 4; break;
+                case '3rd':  weeksAway = (3 - ((weekNum-1)%4) + 4) % 4; break;
+                case '4th':  weeksAway = (0 - ((weekNum-1)%4) + 4) % 4; break;
+            }
+            el.textContent = weeksAway === 0 ? '↑ this week ✓' : weeksAway === 1 ? '↑ next week' : `↑ in ${weeksAway} weeks`;
+        },
+
+        // ── Webhook ──────────────────────────────────────────────────────────────
+
+        async loadWebhookKey() {
             try {
-                const res = await fetch('api.php');
+                const res = await fetch('api.php?action=get_webhook_key');
                 if (res.ok) {
-                    const parsed = await res.json();
-                    this.quests = parsed.quests || [];
-                    this.shopItems = parsed.shopItems || [];
-                    this.calendarFeeds = parsed.calendarFeeds || [];
+                    const data = await res.json();
+                    const inp = document.getElementById('webhookKeyDisplay');
+                    if (inp) inp.value = data.api_key || '';
+                    this.updateHaYaml(data.api_key || '');
                 }
             } catch(e) { console.error(e); }
+        },
+
+        async generateWebhookKey() {
+            if (!confirm('Generate a new API key? The existing key stops working immediately.')) return;
+            const res = await fetch('api.php?action=generate_webhook_key', { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                const inp = document.getElementById('webhookKeyDisplay');
+                if (inp) { inp.value = data.api_key; inp.type = 'text'; }
+                this.updateHaYaml(data.api_key);
+            }
+        },
+
+        toggleWebhookKeyVisibility() {
+            const inp = document.getElementById('webhookKeyDisplay');
+            const btn = document.querySelector('[onclick="manager.toggleWebhookKeyVisibility()"]');
+            if (!inp) return;
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+            if (btn) btn.textContent = inp.type === 'password' ? '👁 Show' : '👁 Hide';
+        },
+
+        copyWebhookKey() {
+            const v = document.getElementById('webhookKeyDisplay')?.value;
+            if (!v) { alert('No key to copy'); return; }
+            navigator.clipboard.writeText(v).then(() => alert('✅ Copied!'));
+        },
+
+        updateHaYaml(key) {
+            const el = document.getElementById('haYamlExample');
+            if (!el) return;
+            const base = window.location.origin + window.location.pathname.replace('manager.html', '');
+            el.textContent =
+`sensor:
+  - platform: rest
+    name: Quest Status
+    resource: ${base}api.php?action=ha_status&api_key=${key || 'YOUR_KEY'}
+    scan_interval: 300
+    value_template: "{{ value_json.completed_today }}"
+    json_attributes: [date, today_points, total_points, active_days]
+
+rest_command:
+  complete_quest:
+    url: ${base}api.php?action=ha_complete&api_key=${key || 'YOUR_KEY'}
+    method: POST
+    headers: { Content-Type: application/json }
+    payload: '{"quest_id":"{{ quest_id }}","quest_name":"{{ quest_name }}","points":{{ points }}}'
+
+  add_quest:
+    url: ${base}api.php?action=ha_add_quest&api_key=${key || 'YOUR_KEY'}
+    method: POST
+    headers: { Content-Type: application/json }
+    payload: '{"name":"{{ name }}","schedule":"{{ schedule }}","points":{{ points }}}'`;
+        },
+
+        // ── Price inflation toggle ────────────────────────────────────────────────
+
+        async loadInflationSetting() {
+            try {
+                const res = await fetch('api.php?action=shop_items');
+                if (res.ok) {
+                    const data = await res.json();
+                    const toggle = document.getElementById('inflationToggle');
+                    if (toggle) toggle.checked = data.inflation_enabled ?? true;
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        async setInflation(enabled) {
+            await fetch('api.php?action=set_shop_inflation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            }).catch(e => console.error(e));
+        },
+
+        // ── Day presets ───────────────────────────────────────────────────────────
+
+        async loadPresets() {
+            try {
+                const res = await fetch('api.php?action=get_day_presets');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.dayPresets = data.presets || [];
+                    this.renderPresets();
+                    this.renderPresetButtons('newPresetsBar', 'new-day-cb');
+                    this.renderPresetButtons('editPresetsBar', 'edit-day-cb');
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        renderPresets() {
+            const container = document.getElementById('presetsList');
+            if (!container) return;
+            if (!this.dayPresets?.length) {
+                container.innerHTML = '<p style="color:var(--olive-light); font-size:0.85rem;">No presets yet.</p>';
+                return;
+            }
+            container.innerHTML = this.dayPresets.map(p => `
+                <div class="feed-item" style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid var(--dark-grey-3);">
+                    <div>
+                        <strong>${this.escapeHtml(p.name)}</strong>
+                        <span style="font-size:0.8rem; color:var(--olive-light); margin-left:0.5rem;">${p.days.split(',').join(' · ')}</span>
+                    </div>
+                    <button onclick="manager.deletePreset(${p.id})" style="background:var(--error); padding:0.3rem 0.6rem;">🗑️</button>
+                </div>`).join('');
+        },
+
+        renderPresetButtons(barId, cbClass) {
+            const bar = document.getElementById(barId);
+            if (!bar) return;
+            if (!this.dayPresets?.length) { bar.innerHTML = ''; return; }
+            bar.innerHTML = '<span style="font-size:0.75rem; color:var(--olive-light); margin-right:0.25rem;">Presets:</span>' +
+                this.dayPresets.map(p =>
+                    `<button onclick="manager.applyPreset('${cbClass}','${p.days}')" style="font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:12px; background:var(--dark-grey-3);">${this.escapeHtml(p.name)}</button>`
+                ).join('');
+        },
+
+        applyPreset(cbClass, daysStr) {
+            const days = daysStr.split(',');
+            document.querySelectorAll('.' + cbClass).forEach(cb => { cb.checked = days.includes(cb.value); });
+        },
+
+        openPresetModal() {
+            document.querySelectorAll('.preset-day-cb').forEach(cb => cb.checked = false);
+            document.getElementById('presetNameInput').value = '';
+            document.getElementById('addPresetModal').classList.remove('hidden');
+        },
+
+        closePresetModal() {
+            document.getElementById('addPresetModal').classList.add('hidden');
+        },
+
+        async savePreset() {
+            const name = document.getElementById('presetNameInput').value.trim();
+            const days = Array.from(document.querySelectorAll('.preset-day-cb:checked')).map(c => c.value).join(',');
+            if (!name) { alert('Enter a name'); return; }
+            if (!days) { alert('Select at least one day'); return; }
+            const res = await fetch('api.php?action=add_day_preset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, days })
+            });
+            if (res.ok) { this.closePresetModal(); await this.loadPresets(); }
+            else alert('Failed to save preset');
+        },
+
+        async deletePreset(id) {
+            if (!confirm('Delete this preset? Existing quests using it still work fine.')) return;
+            await fetch(`api.php?action=delete_day_preset&id=${id}`, { method: 'DELETE' });
+            await this.loadPresets();
+        },
+
+        // ── Schedule type show/hide helpers ──────────────────────────────────────
+
+        handleScheduleTypeChange(type, prefix) {
+            const isSelect = type === 'selectdays';
+            const isCustom = type === 'custom';
+            document.getElementById(prefix + 'SelectDaysContainer').style.display = isSelect ? 'block' : 'none';
+            document.getElementById(prefix + 'WeekSelectorWrap').style.display    = isSelect ? 'block' : 'none';
+            document.getElementById(prefix === 'new' ? 'customDateContainer' : 'editCustomDateContainer').style.display = isCustom ? 'block' : 'none';
+        },
+
+        async init() {
+            await this.loadData();
+            await this.loadThemes();
+            this.renderQuests();
+            await this.loadTimezone();
+            this.renderCalendarFeeds();
+            await this.loadStoredCalendarQuests();
+            this.renderShopItems();
+            this.setupCustomTheme();
+
+            // Day selector change — new form
+            const self = this;
+            document.getElementById('newScheduleType').addEventListener('change', function() {
+                self.handleScheduleTypeChange(this.value, 'new');
+            });
+            // Day selector change — edit modal
+            document.getElementById('editScheduleType').addEventListener('change', function() {
+                self.handleScheduleTypeChange(this.value, 'edit');
+            });
+            // Week selector hints
+            document.getElementById('newSchedulePattern').addEventListener('change', function() {
+                self.updatePatternHint('newSchedulePattern', 'newPatternHint');
+            });
+            document.getElementById('editSchedulePattern').addEventListener('change', function() {
+                self.updatePatternHint('editSchedulePattern', 'editPatternHint');
+            });
+
+            await this.loadWebhookKey();
+            await this.loadInflationSetting();
+            await this.loadPresets();
+        },
+
+        async loadData() {
+            try {
+                const [questsRes, shopRes, feedsRes] = await Promise.all([
+                    fetch('api.php?action=all_quests'),
+                    fetch('api.php?action=shop_items'),
+                    fetch('api.php?action=calendar_feeds')
+                ]);
+
+                if (questsRes.ok) {
+                    const data = await questsRes.json();
+                    this.quests = data.quests || [];
+                    console.log('✅ all_quests loaded:', this.quests.length);
+                } else {
+                    console.warn('❌ all_quests failed:', questsRes.status, await questsRes.text());
+                }
+
+                if (shopRes.ok) {
+                    const data = await shopRes.json();
+                    this.shopItems = data.items || [];
+                    console.log('✅ shop_items loaded:', this.shopItems.length);
+                } else {
+                    console.warn('❌ shop_items failed:', shopRes.status, await shopRes.text());
+                }
+
+                if (feedsRes.ok) {
+                    const data = await feedsRes.json();
+                    this.calendarFeeds = data.feeds || [];
+                    console.log('✅ calendar_feeds loaded:', this.calendarFeeds.length);
+                } else {
+                    console.warn('❌ calendar_feeds failed:', feedsRes.status, await feedsRes.text());
+                }
+            } catch(e) {
+                console.error('💥 loadData() error:', e);
+            }
         },
 
         async saveQuests() {
@@ -417,30 +871,96 @@
         openEditModal(index) {
             this.editingIndex = index;
             const quest = this.quests[index];
-            document.getElementById('editQuestName').value = quest.name;
-            document.getElementById('editQuestType').value = quest.type;
-            document.getElementById('editQuestPoints').value = quest.points || 1;
-            document.getElementById('editQuestSchedule').value = quest.schedule || 'Daily';
+
+            document.getElementById('editQuestName').value     = quest.name;
+            document.getElementById('editQuestType').value     = quest.type;
+            document.getElementById('editQuestPoints').value   = quest.points || 1;
             document.getElementById('editQuestReminder').value = quest.reminder_time || '';
+
+            // ---- Parse schedule string ----
+            let scheduleRaw = quest.schedule || 'Daily';
+            let isWeekly = false;
+            if (scheduleRaw.startsWith('Weekly:')) { isWeekly = true; scheduleRaw = scheduleRaw.slice(7); }
+            else if (scheduleRaw === 'Weekly')      { isWeekly = true; scheduleRaw = 'Daily'; }
+
+            let typeVal = 'daily', pattern = 'every', custom = '', selectedDays = [];
+
+            if      (scheduleRaw === 'Daily')    { typeVal = 'daily'; }
+            else if (scheduleRaw === 'One-time') { typeVal = 'onetime'; }
+            // Legacy: Weekend and DD Days become select-days presets
+            else if (scheduleRaw === 'Weekend')  { typeVal = 'selectdays'; selectedDays = ['Saturday','Sunday']; }
+            else if (scheduleRaw === 'DD')       { typeVal = 'selectdays'; selectedDays = ['Thursday','Friday','Saturday','Sunday']; }
+            else if (scheduleRaw.includes('/'))  { typeVal = 'custom'; custom = scheduleRaw; }
+            else if (scheduleRaw.includes('days:')) {
+                // "days:Monday,Friday" or "odd days:Monday,Friday"
+                typeVal = 'selectdays';
+                const m = scheduleRaw.match(/^(.*?)days:(.+)$/);
+                if (m) { pattern = m[1].trim() || 'every'; selectedDays = m[2].split(',').map(d => d.trim()); }
+            } else {
+                // Legacy single weekday: "Monday" or "odd Monday"
+                typeVal = 'selectdays';
+                const parts = scheduleRaw.split(' ');
+                if (parts.length === 2 && ['odd','even','1st','2nd','3rd','4th'].includes(parts[0])) {
+                    pattern = parts[0]; selectedDays = [parts[1]];
+                } else {
+                    selectedDays = [parts[0]];
+                }
+            }
+
+            document.getElementById('editScheduleType').value    = typeVal;
+            document.getElementById('editSchedulePattern').value = pattern;
+            document.getElementById('editScheduleCustom').value  = custom;
+            document.getElementById('editQuestWeekly').checked   = isWeekly;
+
+            // Set day checkboxes
+            document.querySelectorAll('.edit-day-cb').forEach(cb => { cb.checked = selectedDays.includes(cb.value); });
+
+            // Show/hide panels
+            this.handleScheduleTypeChange(typeVal, 'edit');
+            this.updatePatternHint('editSchedulePattern', 'editPatternHint');
+
             document.getElementById('editModal').classList.remove('hidden');
         },
-        closeEditModal() { document.getElementById('editModal').classList.add('hidden'); this.editingIndex = null; },
+
+        closeEditModal() {
+            document.getElementById('editModal').classList.add('hidden');
+            this.editingIndex = null;
+        },
+
         saveEditQuest() {
             if (this.editingIndex === null) return;
             const quest = this.quests[this.editingIndex];
             quest.name = document.getElementById('editQuestName').value;
             quest.type = document.getElementById('editQuestType').value;
             quest.points = parseInt(document.getElementById('editQuestPoints').value) || 1;
-            quest.schedule = document.getElementById('editQuestSchedule').value || 'Daily';
             quest.reminder_time = document.getElementById('editQuestReminder').value || null;
+
+            // Build schedule (weekly checkbox wraps the base)
+            const weekly = document.getElementById('editQuestWeekly').checked;
+            const base   = this.buildScheduleString('editScheduleType', 'editSchedulePattern', 'editScheduleCustom', 'edit-day-cb');
+            quest.schedule = weekly ? 'Weekly:' + base : base;
+
             this.saveQuests();
             this.closeEditModal();
             this.renderQuests();
             alert('✅ Quest updated');
         },
-        updatePoints(idx, val) { this.quests[idx].points = Math.max(1, parseInt(val) || 1); this.saveQuests(); },
-        updateSchedule(idx, val) { this.quests[idx].schedule = val || 'Daily'; this.saveQuests(); },
-        updateReminder(idx, val) { this.quests[idx].reminder_time = val || null; this.saveQuests(); },
+
+        updatePoints(idx, val) {
+            this.quests[idx].points = Math.max(1, parseInt(val) || 1);
+            this.saveQuests();
+        },
+
+        updateSchedule(idx, val) {
+            this.quests[idx].schedule = val || 'Daily';
+            this.saveQuests();
+        },
+
+        updateReminder(idx, val) {
+            this.quests[idx].reminder_time = val || null;
+            this.saveQuests();
+        },
+
         deleteQuest(idx) {
             if (confirm(`Delete "${this.quests[idx].name}"?`)) {
                 this.quests.splice(idx, 1);
@@ -448,12 +968,16 @@
                 this.renderQuests();
             }
         },
+
         addQuest() {
-            const name = document.getElementById('newQuestName').value.trim();
-            const type = document.getElementById('newQuestType').value;
-            const points = parseInt(document.getElementById('newQuestPoints').value) || 1;
-            const schedule = document.getElementById('newQuestSchedule').value.trim() || 'Daily';
+            const name    = document.getElementById('newQuestName').value.trim();
+            const type    = document.getElementById('newQuestType').value;
+            const points  = parseInt(document.getElementById('newQuestPoints').value) || 1;
             const reminder = document.getElementById('newQuestReminder').value.trim() || null;
+            const weekly  = document.getElementById('newQuestWeekly').checked;
+            const base    = this.buildScheduleString('newScheduleType', 'newSchedulePattern', 'newScheduleCustom', 'new-day-cb');
+            const schedule = weekly ? 'Weekly:' + base : base;
+
             if (!name) { alert('Enter a name'); return; }
             this.quests.push({
                 id: 'custom-' + Date.now(),
@@ -462,11 +986,19 @@
             });
             this.saveQuests();
             this.renderQuests();
+            // Reset form
             document.getElementById('newQuestName').value = '';
-            document.getElementById('newQuestSchedule').value = '';
+            document.getElementById('newScheduleType').value = 'daily';
+            document.getElementById('newSchedulePattern').value = 'every';
+            document.getElementById('newScheduleCustom').value = '';
             document.getElementById('newQuestReminder').value = '';
+            document.getElementById('newQuestWeekly').checked = false;
+            document.querySelectorAll('.new-day-cb').forEach(cb => cb.checked = false);
+            this.handleScheduleTypeChange('daily', 'new');
+            this.updatePatternHint('newSchedulePattern', 'newPatternHint');
             alert('✅ Quest added');
         },
+
         async updateAvatar(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -477,6 +1009,72 @@
                 if (res.ok) alert('✅ Avatar uploaded');
                 else alert('Upload failed');
             } catch(e) { alert('Error'); }
+        },
+
+        renderTzClock(tz) {
+            const el = document.getElementById('tzClock');
+            if (!el) return;
+            try {
+                el.textContent = new Intl.DateTimeFormat('en-US', {
+                    timeZone: tz,
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                }).format(new Date());
+            } catch(e) { el.textContent = ''; }
+        },
+
+        async loadTimezone() {
+            const select = document.getElementById('timezoneSelect');
+            if (!select) return;
+            // Use browser's full IANA list if available, fall back to curated list
+            let tzList;
+            try { tzList = Intl.supportedValuesOf('timeZone'); }
+            catch(e) {
+                tzList = [
+                    'Pacific/Honolulu','America/Anchorage','America/Los_Angeles','America/Phoenix',
+                    'America/Denver','America/Chicago','America/New_York','America/Halifax',
+                    'America/Sao_Paulo','Atlantic/Azores','UTC','Europe/London',
+                    'Europe/Amsterdam','Europe/Paris','Europe/Berlin','Europe/Athens',
+                    'Europe/Helsinki','Europe/Moscow','Asia/Dubai','Asia/Karachi',
+                    'Asia/Kolkata','Asia/Dhaka','Asia/Bangkok','Asia/Shanghai',
+                    'Asia/Tokyo','Australia/Perth','Australia/Adelaide','Australia/Sydney',
+                    'Pacific/Auckland'
+                ];
+            }
+            select.innerHTML = tzList.map(tz =>
+                `<option value="${tz}">${tz.replace(/_/g, ' ')}</option>`
+            ).join('');
+            try {
+                const res = await fetch('api.php?action=get_timezone');
+                if (res.ok) {
+                    const data = await res.json();
+                    const tz = data.timezone || 'Europe/Amsterdam';
+                    select.value = tz;
+                    this.renderTzClock(tz);
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        async saveTimezone(tz) {
+            this.renderTzClock(tz);
+            try {
+                const res = await fetch('api.php?action=set_timezone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timezone: tz })
+                });
+                const hint = document.getElementById('timezoneHint');
+                if (hint) {
+                    hint.textContent = res.ok
+                        ? `✅ Saved — resets at 3:00 AM ${tz}.`
+                        : '❌ Failed to save timezone.';
+                    setTimeout(() => {
+                        hint.textContent = 'Quests reset at 3:00 AM in the selected timezone.';
+                    }, 3000);
+                }
+            } catch(e) { alert('Failed to save timezone'); }
         },
 
         renderCalendarFeeds() {
@@ -518,6 +1116,7 @@
                 if (line === 'BEGIN:VEVENT') {
                     current = {};
                 } else if (line === 'END:VEVENT' && current && current.summary) {
+                    // Keep the 'ical' filter
                     if (current.description && current.description.toLowerCase().includes('ical')) {
                         events.push(current);
                     }
@@ -793,6 +1392,7 @@
         },
 
         async loadThemes() {
+            this.currentTheme = localStorage.getItem('active_theme') || 'default';
             try {
                 const res = await fetch('data/themes.json?_=' + Date.now());
                 if (res.ok) {
@@ -904,4 +1504,5 @@
         errorDiv.innerHTML = 'Init error: ' + e.message + ' stack: ' + e.stack;
     }
 </script>
+
 <div class="notch-fix-bottom"></div>
