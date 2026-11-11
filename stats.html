@@ -187,6 +187,40 @@
             return `${weekdays[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2,'0')} ${d.getUTCFullYear()}`;
         },
 
+        formatDayList(days, useOr) {
+            if (!days.length) return '';
+            const conj = useOr ? ' or ' : ' and ';
+            if (days.length === 1) return days[0];
+            if (days.length === 2) return days[0] + conj + days[1];
+            return days.slice(0, -1).join(', ') + conj + days[days.length - 1];
+        },
+
+        formatSchedule(schedule) {
+            if (!schedule || schedule === 'Daily') return '';
+            if (schedule === 'One-time') return 'One-time';
+            if (schedule.includes('/')) return `Date: ${schedule}`;
+            let s = schedule, weekly = false;
+            if (s.startsWith('Weekly:')) { weekly = true; s = s.slice(7); }
+            else if (s === 'Weekly')     { weekly = true; s = 'Daily'; }
+            let pat = 'every';
+            const pm = s.match(/^(odd|even|1st|2nd|3rd|4th) /i);
+            if (pm) { pat = pm[1].toLowerCase(); s = s.slice(pm[0].length); }
+            const patLabel = { odd:'odd', even:'even', '1st':'1st', '2nd':'2nd', '3rd':'3rd', '4th':'4th' }[pat] || '';
+            const everyPat = pat === 'every' ? 'Every' : `Every ${patLabel} week`;
+            const oncePat  = pat === 'every' ? 'Once per week' : `Once per ${patLabel} week`;
+            if (s === 'Daily') return weekly ? `${oncePat}, every day` : (pat === 'every' ? '' : everyPat);
+            if (s === 'One-time') return 'One-time';
+            if (s === 'Weekend') return weekly ? `${oncePat} on weekends` : `${everyPat} weekend`;
+            if (s === 'DD') return weekly ? `${oncePat} Thu–Sun` : `${everyPat} Thu–Sun`;
+            if (s.startsWith('days:')) {
+                const days = s.slice(5).split(',').map(d => d.trim());
+                return weekly ? `${oncePat} on ${this.formatDayList(days, true)}` : `${everyPat} ${this.formatDayList(days, false)}`;
+            }
+            const validDays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+            if (validDays.includes(s)) return weekly ? `${oncePat} on ${s}` : `${everyPat} ${s}`;
+            return schedule;
+        },
+
         getTodayUTC() {
             const now = new Date();
             return `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-${String(now.getUTCDate()).padStart(2,'0')}`;
@@ -289,6 +323,15 @@
                 if (!mainRes.ok) throw new Error('Failed quests');
                 const mainData = await mainRes.json();
                 this.quests = mainData.quests || [];
+
+                // Load ALL quests keyed by name — used to get real type/schedule for
+                // completed quests that aren't visible today (weekly-hidden, not deleted)
+                const allQRes = await this.fetchWithStatsCode('api.php?action=all_quests');
+                this.allQuestsMap = new Map();
+                if (allQRes.ok) {
+                    const allQData = await allQRes.json();
+                    (allQData.quests || []).forEach(q => this.allQuestsMap.set(q.name, q));
+                }
 
                 this.quests = this.quests.map(q => {
                     if (q.days_visible && typeof q.days_visible === 'string') {
@@ -479,34 +522,42 @@
                     const completions = compData.completions || {};
 
                     // ── Build quest list ──
-                    // 1. Visible quests with completion status
+                    // 1. Visible quests with completion status (include schedule for display)
                     const visibleItems = visibleQuests.map(q => ({
                         id: q.id,
                         name: q.name,
                         points: q.points || 1,
                         type: q.type || 'side',
+                        schedule: q.schedule || null,
                         reminder_time: q.reminder_time || null,
                         completed: completions[q.id]?.completed === true
                     }));
 
-                    // 2. Completed quests from history NOT in the visible list (deleted quests)
+                    // 2. Completed quests from history NOT in today's visible list
+                    //    (weekly-hidden, schedule-hidden, or truly deleted)
+                    //    Look up real type/schedule from allQuestsMap — no 'deleted' tag
                     const visibleNames = new Set(visibleQuests.map(q => q.name));
                     const deletedItems = historyCompleted
                         .filter(h => {
                             const name = h.description.replace(/^Completed quest:\s*/i, '').trim();
                             return !visibleNames.has(name);
                         })
-                        .map(h => ({
-                            id: null,
-                            name: h.description.replace(/^Completed quest:\s*/i, '').trim(),
-                            points: h.points || 1,
-                            type: 'deleted',
-                            reminder_time: null,
-                            completed: true
-                        }));
+                        .map(h => {
+                            const name = h.description.replace(/^Completed quest:\s*/i, '').trim();
+                            const known = this.allQuestsMap?.get(name);
+                            return {
+                                id: null,
+                                name,
+                                points: h.points || 1,
+                                type: known?.type || 'side',
+                                schedule: known?.schedule || null,
+                                reminder_time: null,
+                                completed: true
+                            };
+                        });
 
                     // Sort: calendar first, then main, then side, then deleted; by reminder time within groups
-                    const typeOrder = { calendar: 0, main: 1, side: 2, deleted: 3 };
+                    const typeOrder = { calendar: 0, main: 1, side: 2 };
                     const allQuestItems = [...visibleItems, ...deletedItems].sort((a, b) => {
                         const tA = typeOrder[a.type] ?? 99, tB = typeOrder[b.type] ?? 99;
                         if (tA !== tB) return tA - tB;
@@ -543,19 +594,17 @@
                 const questsHtml = day.quests.map(quest => {
                     const icon = quest.completed ? '✅' : '❌';
                     const completedClass = quest.completed ? 'completed' : '';
-                    const reminderHtml = quest.reminder_time ? `⏰ ${quest.reminder_time}` : '';
-                    let typeLabel = quest.type || '';
-                    let tagStyle = '';
-                    if (quest.type === 'deleted') {
-                        typeLabel = 'deleted';
-                        tagStyle = 'style="opacity:0.5;"';
-                    }
+                    const reminderPart  = quest.reminder_time ? `⏰ ${quest.reminder_time}` : '';
+                    const schedulePart  = this.formatSchedule(quest.schedule);
+                    const detailParts   = [schedulePart, reminderPart].filter(Boolean).join(' · ');
+                    const typeLabel = quest.type || '';
+                    const tagStyle  = '';
                     return `
                         <div class="quest-log-item ${completedClass}">
                             <div class="quest-status-icon">${icon}</div>
                             <div class="quest-log-info">
                                 <div class="quest-log-name">${this.escapeHtml(quest.name)}</div>
-                                <div class="quest-log-details">${reminderHtml}</div>
+                                ${detailParts ? `<div class="quest-log-details">${detailParts}</div>` : ''}
                             </div>
                             <span class="quest-type-tag" ${tagStyle}>${typeLabel}</span>
                             <div class="quest-log-points">${quest.points} pts</div>

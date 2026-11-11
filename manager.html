@@ -171,8 +171,8 @@
                 /* Force identical height: padding-top + line-height + padding-bottom + borders */
                 height: calc(0.75rem * 2 + 1.5rem + 2px);
             }
-            /* Checkboxes: don't inherit the tall height/padding */
-            input[type="checkbox"] { height: auto; width: auto; padding: 0; margin: 0; }
+            /* Checkboxes: don't inherit the tall height/padding; min touch target */
+            input[type="checkbox"] { height: 1.25rem; width: 1.25rem; padding: 0; margin: 0; cursor: pointer; flex-shrink: 0; }
             /* Kill the native OS height control on select, then restore the arrow */
             select {
                 -webkit-appearance: none;
@@ -234,12 +234,46 @@
     </div>
 
     <div class="settings-panel">
-        <h2>🕐 Timezone</h2>
+        <h2>🕐 Timezone &amp; Display</h2>
         <div class="form-group">
             <label for="timezoneSelect" style="color:var(--olive-light); font-size:0.9rem; margin-bottom:0.4rem; display:block;">Quest reset timezone — resets at 3:00 AM</label>
             <select id="timezoneSelect" onchange="manager.saveTimezone(this.value)" style="width:100%;"></select>
             <div id="tzClock" style="margin-top:0.75rem; font-family:monospace; font-size:2rem; font-weight:600; letter-spacing:0.06em; color:var(--jade);"></div>
             <div id="timezoneHint" class="form-group-hint" style="margin-top:0.4rem;">Quests reset at 3:00 AM in the selected timezone.</div>
+        </div>
+        <div style="border-top:1px solid var(--dark-grey-3); margin-top:1rem; padding-top:1rem; display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+            <div class="form-group">
+                <label style="color:var(--olive-light); font-size:0.85rem; margin-bottom:0.4rem; display:block;">Time format</label>
+                <select id="timeFormatSelect" onchange="manager.saveDisplayPref('time_format', this.value)" style="width:100%;">
+                    <option value="12h">12h (9:30 am)</option>
+                    <option value="24h">24h (21:30)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label style="color:var(--olive-light); font-size:0.85rem; margin-bottom:0.4rem; display:block;">Date format</label>
+                <select id="dateFormatSelect" onchange="manager.saveDisplayPref('date_format', this.value)" style="width:100%;">
+                    <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                    <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                    <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <h2>🔓 Side Quest Unlock</h2>
+        <p style="font-size:0.85rem; color:var(--olive-light); margin-bottom:0.75rem;">How much of your main quests must be done before side quests unlock (rounded up).</p>
+        <div id="sideUnlockLabel" style="font-size:1.75rem; font-weight:600; color:var(--jade); text-align:center; margin-bottom:0.25rem;"></div>
+        <input type="range" id="sideUnlockSlider" min="0" max="100" step="1" value="25"
+               oninput="manager.updateSideUnlockLabel()" onchange="manager.saveSideUnlock()"
+               style="width:100%; padding:0; height:auto; margin:0; border:none; background:transparent; accent-color:var(--jade);">
+        <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--olive-light); margin-top:0.25rem;">
+            <span>0% (always open)</span><span>100% (all main quests)</span>
+        </div>
+        <div id="sideUnlockExample" style="font-size:0.85rem; color:var(--olive-light); margin-top:0.6rem; text-align:center;"></div>
+        <div style="margin-top:0.75rem; display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
+            <button id="sideUnlockResetBtn" class="secondary" onclick="manager.resetSideUnlock()">↺ System default</button>
+            <span id="sideUnlockHint" class="form-group-hint"></span>
         </div>
     </div>
 
@@ -272,17 +306,17 @@
 
     <div class="settings-panel">
         <h2>🔗 Webhook / External API</h2>
-        <p style="font-size:0.85rem; color:var(--olive-light); margin-bottom:1rem;">Use this key to connect Home Assistant or any external service. Keep it secret.</p>
+        <p style="font-size:0.85rem; color:var(--olive-light); margin-bottom:0.5rem;">Use this key to connect Home Assistant or any external service. Supports fetching quests, completing them, checking points, and redeeming shop items — enough to build a fully custom HA card or automation. Keep it secret.</p>
         <div class="form-group" style="margin-bottom:0.75rem;">
             <label style="font-size:0.85rem; color:var(--olive-light); display:block; margin-bottom:0.4rem;">API Key</label>
-            <div style="display:flex; gap:0.5rem; align-items:center;">
-                <input type="password" id="webhookKeyDisplay" readonly style="flex:1; font-family:monospace; font-size:0.85rem;" placeholder="No key yet — click Generate">
-                <button onclick="manager.toggleWebhookKeyVisibility()" style="white-space:nowrap; flex-shrink:0;">👁 Show</button>
-                <button onclick="manager.copyWebhookKey()" style="white-space:nowrap; flex-shrink:0;">📋 Copy</button>
+            <input type="password" id="webhookKeyDisplay" readonly style="width:100%; font-family:monospace; font-size:0.85rem; margin-bottom:0.5rem;" placeholder="No key yet — click Generate">
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button onclick="manager.toggleWebhookKeyVisibility()">👁 Show / Hide</button>
+                <button onclick="manager.copyWebhookKey()">📋 Copy</button>
+                <button onclick="manager.generateWebhookKey()" class="danger">🔄 Generate New Key</button>
             </div>
         </div>
-        <button onclick="manager.generateWebhookKey()" class="danger" style="margin-bottom:1rem;">🔄 Generate New Key</button>
-        <details style="font-size:0.8rem; color:var(--olive-light);">
+        <details style="font-size:0.8rem; color:var(--olive-light); margin-top:0.75rem;">
             <summary style="cursor:pointer; margin-bottom:0.5rem;">📖 Home Assistant example YAML</summary>
             <pre id="haYamlExample" style="background:var(--dark-grey-3); padding:0.75rem; border-radius:6px; overflow-x:auto; font-size:0.75rem; line-height:1.5; white-space:pre-wrap;"></pre>
         </details>
@@ -295,6 +329,23 @@
         </div>
         <p style="font-size:0.8rem; color:var(--olive-light); margin-bottom:0.75rem;">Presets appear as quick-select buttons in the Select Days form. Deleting a preset doesn't affect existing quests using it.</p>
         <div id="presetsList"></div>
+    </div>
+
+    <!-- Link wait-time modal -->
+    <div id="linkWaitModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>🕐 Wait time</h3>
+            <p style="font-size:0.85rem; color:var(--olive-light); margin-bottom:0.75rem;">
+                After the trigger quest is completed, <strong id="linkWaitName"></strong> shows a reminder time of
+                completion time + this wait (max 12 hrs, capped at the end of the day).
+            </p>
+            <div id="linkWaitLabel" style="font-size:1.5rem; font-weight:600; color:var(--jade); text-align:center; margin-bottom:0.5rem;"></div>
+            <input type="range" id="linkWaitSlider" min="0" max="720" step="5" value="0" oninput="manager.updateLinkWaitLabel()" style="width:100%; padding:0; height:auto;">
+            <div class="modal-buttons" style="margin-top:1rem;">
+                <button class="secondary" onclick="manager.closeLinkWaitModal()">Cancel</button>
+                <button onclick="manager.saveLinkWait()">Save</button>
+            </div>
+        </div>
     </div>
 
     <!-- Preset modal -->
@@ -368,6 +419,7 @@
                         <label><input type="checkbox" class="new-day-cb" value="Sunday"> Sunday</label>
                     </div>
                     <div id="newPresetsBar" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
+                    <button onclick="manager.clearDaySelection('new-day-cb')" style="margin-top:0.4rem; font-size:0.75rem; padding:0.2rem 0.6rem; background:var(--dark-grey-3); border-radius:12px;">✕ Clear selection</button>
                 </div>
 
                 <!-- Custom date field -->
@@ -377,6 +429,12 @@
 
                 <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
                     <input type="checkbox" id="newQuestWeekly"> 📅 Weekly Quest — once per week only
+                </label>
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
+                    <input type="checkbox" id="newQuestPriority"> 🔴 Priority Quest — highlighted in red
+                </label>
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
+                    <input type="checkbox" id="newQuestHaOnly"> ⚡ HA-Only — no manual checkbox, complete via webhook only
                 </label>
             </div>
         </div>
@@ -461,6 +519,7 @@
                         <label><input type="checkbox" class="edit-day-cb" value="Sunday"> Sunday</label>
                     </div>
                     <div id="editPresetsBar" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
+                    <button onclick="manager.clearDaySelection('edit-day-cb')" style="margin-top:0.4rem; font-size:0.75rem; padding:0.2rem 0.6rem; background:var(--dark-grey-3); border-radius:12px;">✕ Clear selection</button>
                 </div>
 
                 <div id="editCustomDateContainer" style="display:none; margin-top:0.5rem;">
@@ -469,6 +528,24 @@
                 <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.6rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
                     <input type="checkbox" id="editQuestWeekly"> 📅 Weekly Quest — once per week only
                 </label>
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
+                    <input type="checkbox" id="editQuestPriority"> 🔴 Priority Quest — highlighted in red
+                </label>
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem; cursor:pointer; color:var(--olive-light); font-size:0.875rem;">
+                    <input type="checkbox" id="editQuestHaOnly"> ⚡ HA-Only — no manual checkbox, complete via webhook only
+                </label>
+            </div>
+
+            <!-- Group Links -->
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label style="margin-bottom:0.5rem; display:block;">🔗 Group Links <span style="font-size:0.75rem; color:var(--olive-light);">— completing this quest updates linked quests' reminder times</span></label>
+                <div id="editQuestLinksList" style="margin-bottom:0.5rem;"></div>
+                <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                    <select id="editLinkQuestSelect" style="flex:1; min-width:0;">
+                        <option value="">— Add a linked quest —</option>
+                    </select>
+                    <button onclick="manager.addQuestLinkFromSelect()" style="flex-shrink:0;">+ Link</button>
+                </div>
             </div>
 
             <div class="modal-buttons">
@@ -501,17 +578,9 @@
         editingIndex: null,
         editingShopId: null,
         currentTheme: 'default',
+        sideUnlockDefault: 25,
         themesData: null,
 
-        hashCode(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                const char = str.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash |= 0;
-            }
-            return Math.abs(hash).toString(36);
-        },
         escapeHtml(str) {
             return String(str || '').replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : m);
         },
@@ -521,9 +590,9 @@
             const pattern = document.getElementById(patternId)?.value || 'every';
             const custom  = document.getElementById(customId)?.value.trim() || '';
 
-            if (type === 'daily')    return 'Daily';
-            if (type === 'onetime')  return 'One-time';
-            if (type === 'custom')   return custom || 'Daily';
+            if (type === 'daily')   return pattern === 'every' ? 'Daily' : pattern + ' Daily';
+            if (type === 'onetime') return 'One-time';
+            if (type === 'custom')  return custom || 'Daily';
             if (type === 'selectdays') {
                 const days = Array.from(document.querySelectorAll('.' + dayClass + ':checked')).map(c => c.value);
                 if (!days.length) return 'Daily';
@@ -599,28 +668,50 @@
         updateHaYaml(key) {
             const el = document.getElementById('haYamlExample');
             if (!el) return;
-            const base = window.location.origin + window.location.pathname.replace('manager.html', '');
+            const k = key || 'YOUR_API_KEY';
+            const base = 'https://example.com/api.php';   // <- replace with your own site
             el.textContent =
-`sensor:
-  - platform: rest
-    name: Quest Status
-    resource: ${base}api.php?action=ha_status&api_key=${key || 'YOUR_KEY'}
+`# configuration.yaml  (restart or reload YAML after editing)
+
+rest:
+  - resource: ${base}?action=ha_status
     scan_interval: 300
-    value_template: "{{ value_json.completed_today }}"
-    json_attributes: [date, today_points, total_points, active_days]
+    headers:
+      X-API-Key: ${k}
+    sensor:
+      - name: "Quest points total"
+        value_template: "{{ value_json.total_points }}"
+        unit_of_measurement: "pts"
+      - name: "Quest points today"
+        value_template: "{{ value_json.today_points }}"
+        unit_of_measurement: "pts"
+      - name: "Quests completed today"
+        value_template: "{{ value_json.completed_today }}"
 
 rest_command:
-  complete_quest:
-    url: ${base}api.php?action=ha_complete&api_key=${key || 'YOUR_KEY'}
+  quest_complete:        # quest_id comes from ${base}?action=ha_quests
+    url: "${base}?action=ha_complete"
     method: POST
-    headers: { Content-Type: application/json }
-    payload: '{"quest_id":"{{ quest_id }}","quest_name":"{{ quest_name }}","points":{{ points }}}'
+    headers:
+      X-API-Key: ${k}
+      Content-Type: application/json
+    payload: '{"quest_id": "{{ quest_id }}"}'
 
-  add_quest:
-    url: ${base}api.php?action=ha_add_quest&api_key=${key || 'YOUR_KEY'}
+  quest_redeem:          # base_cost = the price you set in the shop
+    url: "${base}?action=ha_redeem"
     method: POST
-    headers: { Content-Type: application/json }
-    payload: '{"name":"{{ name }}","schedule":"{{ schedule }}","points":{{ points }}}'`;
+    headers:
+      X-API-Key: ${k}
+      Content-Type: application/json
+    payload: '{"name": "{{ name }}", "base_cost": {{ base_cost }}}'
+
+# Call it from a button automation / script:
+#   action: rest_command.quest_complete
+#   data:
+#     quest_id: "custom-1234567890"
+#
+# Full quest list (for custom cards):  GET ${base}?action=ha_quests
+# Shop + current inflation:            GET ${base}?action=ha_shop`;
         },
 
         // ── Price inflation toggle ────────────────────────────────────────────────
@@ -667,12 +758,12 @@ rest_command:
                 return;
             }
             container.innerHTML = this.dayPresets.map(p => `
-                <div class="feed-item" style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid var(--dark-grey-3);">
-                    <div>
-                        <strong>${this.escapeHtml(p.name)}</strong>
-                        <span style="font-size:0.8rem; color:var(--olive-light); margin-left:0.5rem;">${p.days.split(',').join(' · ')}</span>
+                <div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem; background:var(--dark-grey); border:1px solid var(--dark-grey-3); border-radius:8px; margin-bottom:0.5rem;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:600; color:var(--cream);">${this.escapeHtml(p.name)}</div>
+                        <div style="font-size:0.78rem; color:var(--olive-light); margin-top:0.1rem;">${p.days.split(',').join(' · ')}</div>
                     </div>
-                    <button onclick="manager.deletePreset(${p.id})" style="background:var(--error); padding:0.3rem 0.6rem;">🗑️</button>
+                    <button onclick="manager.deletePreset(${p.id})" style="background:var(--error); padding:0.35rem 0.6rem; flex-shrink:0;">🗑️</button>
                 </div>`).join('');
         },
 
@@ -689,6 +780,10 @@ rest_command:
         applyPreset(cbClass, daysStr) {
             const days = daysStr.split(',');
             document.querySelectorAll('.' + cbClass).forEach(cb => { cb.checked = days.includes(cb.value); });
+        },
+
+        clearDaySelection(cbClass) {
+            document.querySelectorAll('.' + cbClass).forEach(cb => { cb.checked = false; });
         },
 
         openPresetModal() {
@@ -724,11 +819,12 @@ rest_command:
         // ── Schedule type show/hide helpers ──────────────────────────────────────
 
         handleScheduleTypeChange(type, prefix) {
-            const isSelect = type === 'selectdays';
-            const isCustom = type === 'custom';
-            document.getElementById(prefix + 'SelectDaysContainer').style.display = isSelect ? 'block' : 'none';
-            document.getElementById(prefix + 'WeekSelectorWrap').style.display    = isSelect ? 'block' : 'none';
-            document.getElementById(prefix === 'new' ? 'customDateContainer' : 'editCustomDateContainer').style.display = isCustom ? 'block' : 'none';
+            const showWeek   = type === 'daily' || type === 'selectdays';
+            const showDays   = type === 'selectdays';
+            const showCustom = type === 'custom';
+            document.getElementById(prefix + 'SelectDaysContainer').style.display = showDays ? 'block' : 'none';
+            document.getElementById(prefix + 'WeekSelectorWrap').style.display    = showWeek ? 'block' : 'none';
+            document.getElementById(prefix === 'new' ? 'customDateContainer' : 'editCustomDateContainer').style.display = showCustom ? 'block' : 'none';
         },
 
         async init() {
@@ -757,6 +853,10 @@ rest_command:
             document.getElementById('editSchedulePattern').addEventListener('change', function() {
                 self.updatePatternHint('editSchedulePattern', 'editPatternHint');
             });
+
+            // Default type is Daily -> show its week selector right away
+            this.handleScheduleTypeChange(document.getElementById('newScheduleType').value, 'new');
+            this.updatePatternHint('newSchedulePattern', 'newPatternHint');
 
             await this.loadWebhookKey();
             await this.loadInflationSetting();
@@ -844,7 +944,7 @@ rest_command:
             row.dataset.index = index;
             row.innerHTML = `
                 <div class="drag-handle">⋮⋮</div>
-                <div class="quest-name" onclick="manager.openEditModal(${index})">${this.escapeHtml(quest.name)}</div>
+                <div class="quest-name" onclick="manager.openEditModal(${index})">${Number(quest.priority) ? '🔴 ' : ''}${Number(quest.ha_completable) ? '⚡ ' : ''}${this.escapeHtml(quest.name)}</div>
                 <div class="quest-type${quest.type === 'side' ? ' side' : ''}">${quest.type === 'main' ? 'Main' : 'Side'}</div>
                 <input type="number" class="quest-points-input" value="${quest.points || 1}" onchange="manager.updatePoints(${index}, this.value)">
                 <input type="text" class="quest-schedule" value="${this.escapeHtml(quest.schedule || 'Daily')}" onchange="manager.updateSchedule(${index}, this.value)">
@@ -885,7 +985,11 @@ rest_command:
 
             let typeVal = 'daily', pattern = 'every', custom = '', selectedDays = [];
 
-            if      (scheduleRaw === 'Daily')    { typeVal = 'daily'; }
+            if (scheduleRaw === 'Daily') { typeVal = 'daily'; }
+            else if (/^(odd|even|1st|2nd|3rd|4th) Daily$/.test(scheduleRaw)) {
+                typeVal = 'daily';
+                pattern = scheduleRaw.split(' ')[0]; // e.g. 'odd'
+            }
             else if (scheduleRaw === 'One-time') { typeVal = 'onetime'; }
             // Legacy: Weekend and DD Days become select-days presets
             else if (scheduleRaw === 'Weekend')  { typeVal = 'selectdays'; selectedDays = ['Saturday','Sunday']; }
@@ -919,6 +1023,11 @@ rest_command:
             this.handleScheduleTypeChange(typeVal, 'edit');
             this.updatePatternHint('editSchedulePattern', 'editPatternHint');
 
+            document.getElementById('editQuestPriority').checked = !!Number(quest.priority);
+            document.getElementById('editQuestHaOnly').checked   = !!Number(quest.ha_completable);
+
+            this.loadQuestLinks(quest);
+
             document.getElementById('editModal').classList.remove('hidden');
         },
 
@@ -939,6 +1048,8 @@ rest_command:
             const weekly = document.getElementById('editQuestWeekly').checked;
             const base   = this.buildScheduleString('editScheduleType', 'editSchedulePattern', 'editScheduleCustom', 'edit-day-cb');
             quest.schedule = weekly ? 'Weekly:' + base : base;
+            quest.priority       = document.getElementById('editQuestPriority').checked ? 1 : 0;
+            quest.ha_completable = document.getElementById('editQuestHaOnly').checked ? 1 : 0;
 
             this.saveQuests();
             this.closeEditModal();
@@ -975,6 +1086,8 @@ rest_command:
             const points  = parseInt(document.getElementById('newQuestPoints').value) || 1;
             const reminder = document.getElementById('newQuestReminder').value.trim() || null;
             const weekly  = document.getElementById('newQuestWeekly').checked;
+            const priority = document.getElementById('newQuestPriority').checked ? 1 : 0;
+            const haOnly   = document.getElementById('newQuestHaOnly').checked ? 1 : 0;
             const base    = this.buildScheduleString('newScheduleType', 'newSchedulePattern', 'newScheduleCustom', 'new-day-cb');
             const schedule = weekly ? 'Weekly:' + base : base;
 
@@ -982,6 +1095,7 @@ rest_command:
             this.quests.push({
                 id: 'custom-' + Date.now(),
                 name, type, points, schedule, reminder_time: reminder,
+                priority, ha_completable: haOnly,
                 completed: false, from_calendar: 0
             });
             this.saveQuests();
@@ -993,10 +1107,146 @@ rest_command:
             document.getElementById('newScheduleCustom').value = '';
             document.getElementById('newQuestReminder').value = '';
             document.getElementById('newQuestWeekly').checked = false;
+            document.getElementById('newQuestPriority').checked = false;
+            document.getElementById('newQuestHaOnly').checked = false;
             document.querySelectorAll('.new-day-cb').forEach(cb => cb.checked = false);
             this.handleScheduleTypeChange('daily', 'new');
             this.updatePatternHint('newSchedulePattern', 'newPatternHint');
             alert('✅ Quest added');
+        },
+
+        // ── Group links (quest chains with wait time) ────────────────────────────
+
+        formatDayList(days, useOr) {
+            if (days.length < 2) return days[0] || '';
+            const conj = useOr ? ' or ' : ' and ';
+            return days.slice(0, -1).join(', ') + conj + days[days.length - 1];
+        },
+
+        formatSchedule(schedule) {
+            if (!schedule || schedule === 'Daily') return 'Every day';
+            if (schedule === 'One-time') return 'One-time';
+            if (schedule.includes('/') && !schedule.includes('days:')) return 'Date: ' + schedule;
+            let s = schedule, weekly = false;
+            if (s.startsWith('Weekly:')) { weekly = true; s = s.slice(7); }
+            else if (s === 'Weekly')     { weekly = true; s = 'Daily'; }
+            let pat = 'every';
+            const pm = s.match(/^(odd|even|1st|2nd|3rd|4th) /i);
+            if (pm) { pat = pm[1].toLowerCase(); s = s.slice(pm[0].length); }
+            const every = pat === 'every' ? 'Every' : 'Every ' + pat + ' week';
+            const once  = pat === 'every' ? 'Once per week' : 'Once per ' + pat + ' week';
+            if (s === 'Daily')   return weekly ? once + ', any day' : (pat === 'every' ? 'Every day' : every + ', every day');
+            if (s === 'Weekend') return (weekly ? once + ' on ' : every + ' ') + 'weekend';
+            if (s === 'DD')      return (weekly ? once + ' on ' : every + ' ') + 'Thu–Sun';
+            if (s.startsWith('days:')) {
+                const list = this.formatDayList(s.slice(5).split(',').map(d => d.trim()), weekly);
+                return weekly ? once + ' on ' + list : every + ' ' + list;
+            }
+            return schedule;
+        },
+
+        formatWait(mins) {
+            mins = Number(mins) || 0;
+            const h = Math.floor(mins / 60), m = mins % 60;
+            if (!mins) return 'no wait';
+            if (!h) return m + ' min';
+            return h + ' hr' + (h > 1 ? 's' : '') + (m ? ' ' + m + ' min' : '');
+        },
+
+        async loadQuestLinks(quest) {
+            this.currentLinkQuestId = quest.id;
+            // Fill the "add link" dropdown with every other non-calendar quest
+            const sel = document.getElementById('editLinkQuestSelect');
+            sel.innerHTML = '<option value="">— Add a linked quest —</option>' +
+                this.quests
+                    .filter(q => q.id !== quest.id && q.type !== 'calendar' && !q.from_calendar)
+                    .map(q => `<option value="${this.escapeHtml(q.id)}">${this.escapeHtml(q.name)}</option>`)
+                    .join('');
+            this.questLinks = [];
+            this.renderQuestLinks();
+            try {
+                const res = await fetch('api.php?action=get_quest_links&quest_id=' + encodeURIComponent(quest.id));
+                if (res.ok) {
+                    this.questLinks = (await res.json()).links || [];
+                    this.renderQuestLinks();
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        renderQuestLinks() {
+            const box = document.getElementById('editQuestLinksList');
+            if (!box) return;
+            if (!this.questLinks?.length) {
+                box.innerHTML = '<div style="font-size:0.8rem; color:var(--olive-light);">No linked quests.</div>';
+                return;
+            }
+            box.innerHTML = this.questLinks.map(l => {
+                const timePart = Number(l.wait_minutes) > 0
+                    ? 'wait ' + this.formatWait(l.wait_minutes)
+                    : (l.reminder_time || '');
+                const sched = this.formatSchedule(l.schedule);
+                const sub = [timePart, sched].filter(Boolean).join(' - ');
+                return `
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+                    <div style="flex:1; min-width:0; padding:0.5rem; background:var(--dark-grey); border:1px solid var(--dark-grey-3); border-radius:8px;">
+                        <div style="font-weight:600; overflow-wrap:anywhere;">${this.escapeHtml(l.name)}, ${l.points || 1} pts</div>
+                        <div style="font-size:0.78rem; color:var(--olive-light); overflow-wrap:anywhere;">${this.escapeHtml(sub)}</div>
+                    </div>
+                    <button class="nav-button" title="Set wait time" onclick="manager.openLinkWaitModal(${l.id})" style="flex-shrink:0;">🕐</button>
+                    <button class="nav-button" title="Remove link" onclick="manager.removeQuestLink(${l.id})" style="flex-shrink:0;">✕</button>
+                </div>`;
+            }).join('');
+        },
+
+        async addQuestLinkFromSelect() {
+            const sel = document.getElementById('editLinkQuestSelect');
+            if (!sel.value || !this.currentLinkQuestId) return;
+            const res = await fetch('api.php?action=add_quest_link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trigger_quest_id: this.currentLinkQuestId, linked_quest_id: sel.value, wait_minutes: 0 })
+            });
+            if (!res.ok) { alert('Could not add link'); return; }
+            sel.value = '';
+            await this.loadQuestLinks({ id: this.currentLinkQuestId });
+        },
+
+        async removeQuestLink(id) {
+            if (!confirm('Remove this link?')) return;
+            await fetch('api.php?action=remove_quest_link&id=' + id, { method: 'DELETE' });
+            await this.loadQuestLinks({ id: this.currentLinkQuestId });
+        },
+
+        openLinkWaitModal(id) {
+            const link = this.questLinks.find(l => l.id == id);
+            if (!link) return;
+            this.editingLinkId = id;
+            document.getElementById('linkWaitName').textContent = link.name;
+            const slider = document.getElementById('linkWaitSlider');
+            slider.value = Number(link.wait_minutes) || 0;
+            this.updateLinkWaitLabel();
+            document.getElementById('linkWaitModal').classList.remove('hidden');
+        },
+
+        updateLinkWaitLabel() {
+            const v = Number(document.getElementById('linkWaitSlider').value);
+            document.getElementById('linkWaitLabel').textContent = this.formatWait(v);
+        },
+
+        closeLinkWaitModal() {
+            document.getElementById('linkWaitModal').classList.add('hidden');
+            this.editingLinkId = null;
+        },
+
+        async saveLinkWait() {
+            const mins = Number(document.getElementById('linkWaitSlider').value);
+            await fetch('api.php?action=update_quest_link_wait', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: this.editingLinkId, wait_minutes: mins })
+            });
+            this.closeLinkWaitModal();
+            await this.loadQuestLinks({ id: this.currentLinkQuestId });
         },
 
         async updateAvatar(event) {
@@ -1053,8 +1303,61 @@ rest_command:
                     const tz = data.timezone || 'Europe/Amsterdam';
                     select.value = tz;
                     this.renderTzClock(tz);
+                    // Load display prefs
+                    const tf = document.getElementById('timeFormatSelect');
+                    const df = document.getElementById('dateFormatSelect');
+                    if (tf) tf.value = data.time_format || '12h';
+                    if (df) df.value = data.date_format || 'DD/MM/YYYY';
+                    // Side quest unlock slider
+                    this.sideUnlockDefault = data.side_unlock_default ?? 25;
+                    const sl = document.getElementById('sideUnlockSlider');
+                    if (sl) {
+                        sl.value = data.side_unlock_percent ?? this.sideUnlockDefault;
+                        this.updateSideUnlockLabel();
+                    }
                 }
             } catch(e) { console.error(e); }
+        },
+
+        // ── Side quest unlock threshold ───────────────────────────────────────────
+
+        updateSideUnlockLabel() {
+            const v   = Number(document.getElementById('sideUnlockSlider').value);
+            const def = this.sideUnlockDefault;
+            document.getElementById('sideUnlockLabel').innerHTML =
+                v + '%' + (v === def ? ' <small style="font-size:0.5em; color:var(--olive-light); font-weight:400;">system default</small>' : '');
+            document.getElementById('sideUnlockExample').textContent = v === 0
+                ? 'Side quests are always unlocked.'
+                : `Example: with 10 main quests you need ${Math.ceil(10 * v / 100)} done.`;
+            document.getElementById('sideUnlockResetBtn').textContent = `↺ System default (${def}%)`;
+        },
+
+        async saveSideUnlock() {
+            const v    = Number(document.getElementById('sideUnlockSlider').value);
+            const hint = document.getElementById('sideUnlockHint');
+            try {
+                const res = await fetch('api.php?action=set_timezone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ side_unlock_percent: v })
+                });
+                hint.textContent = res.ok ? '✅ Saved' : '❌ Failed to save';
+            } catch (e) { hint.textContent = '❌ Failed to save'; }
+            setTimeout(() => { hint.textContent = ''; }, 2500);
+        },
+
+        resetSideUnlock() {
+            document.getElementById('sideUnlockSlider').value = this.sideUnlockDefault;
+            this.updateSideUnlockLabel();
+            this.saveSideUnlock();
+        },
+
+        async saveDisplayPref(key, value) {
+            await fetch('api.php?action=set_timezone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [key]: value })
+            }).catch(e => console.error(e));
         },
 
         async saveTimezone(tz) {
@@ -1092,126 +1395,6 @@ rest_command:
             `).join('');
         },
 
-        async fetchCalendarEvents(url) {
-            if (!url) return [];
-            try {
-                const proxy = `api.php?action=ical_proxy&url=${encodeURIComponent(url)}`;
-                const res = await fetch(proxy);
-                if (!res.ok) return [];
-                const text = await res.text();
-                return this.parseICal(text);
-            } catch(e) { console.warn(e); return []; }
-        },
-
-        parseICal(data) {
-            const events = [];
-            const lines = data.split(/\r?\n/);
-            let current = null;
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i].trim();
-                while (lines[i+1] && lines[i+1].startsWith(' ')) {
-                    line += lines[i+1].trim();
-                    i++;
-                }
-                if (line === 'BEGIN:VEVENT') {
-                    current = {};
-                } else if (line === 'END:VEVENT' && current && current.summary) {
-                    // Keep the 'ical' filter
-                    if (current.description && current.description.toLowerCase().includes('ical')) {
-                        events.push(current);
-                    }
-                    current = null;
-                } else if (current) {
-                    const colon = line.indexOf(':');
-                    if (colon === -1) continue;
-                    const key = line.substring(0, colon).split(';')[0];
-                    let val = line.substring(colon + 1);
-                    if (key === 'SUMMARY') current.summary = val.replace(/\\,/g, ',').replace(/\\n/g, '\n');
-                    else if (key === 'DESCRIPTION') {
-                        current.description = val.replace(/\\,/g, ',').replace(/\\n/g, '\n');
-                        const pointsMatch = current.description.match(/ical:(\d+)/i);
-                        current.points = pointsMatch ? parseInt(pointsMatch[1],10) : 1;
-                    }
-                    else if (key === 'DTSTART') {
-                        let dstr = val;
-                        if (dstr.includes(':')) dstr = dstr.split(':').pop();
-                        const d = this.parseICalDate(dstr);
-                        if (d) current.start = d;
-                    }
-                    else if (key === 'DTEND') {
-                        let dstr = val;
-                        if (dstr.includes(':')) dstr = dstr.split(':').pop();
-                        const d = this.parseICalDate(dstr);
-                        if (d) current.end = d;
-                    }
-                    else if (key === 'RRULE') current.rrule = val;
-                    else if (key === 'UID') current.uid = val;
-                }
-            }
-            const today = new Date(); today.setHours(0,0,0,0);
-            const thirty = new Date(today); thirty.setDate(today.getDate()+30);
-            const expanded = [];
-            for (const ev of events) {
-                if (!ev.start) continue;
-                if (ev.rrule && ev.rrule.includes('FREQ=WEEKLY')) {
-                    let cur = new Date(ev.start);
-                    const dur = (ev.end ? new Date(ev.end) : new Date(cur)) - cur;
-                    while (cur < today) cur.setDate(cur.getDate()+7);
-                    while (cur <= thirty) {
-                        expanded.push({
-                            summary: ev.summary,
-                            start: new Date(cur),
-                            end: new Date(cur.getTime() + dur),
-                            uid: ev.uid + '_' + cur.toISOString().slice(0,10),
-                            points: ev.points || 1,
-                            description: ev.description
-                        });
-                        cur.setDate(cur.getDate()+7);
-                    }
-                } else {
-                    expanded.push(ev);
-                }
-            }
-            const upcoming = [];
-            for (const ev of expanded) {
-                const expiry = ev.end || ev.start;
-                if (expiry >= today && expiry <= thirty) {
-                    upcoming.push({
-                        summary: ev.summary,
-                        start: ev.start,
-                        end: ev.end,
-                        uid: ev.uid,
-                        expires: expiry.toDateString(),
-                        points: ev.points || 1
-                    });
-                }
-            }
-            upcoming.sort((a,b)=>a.start-b.start);
-            return upcoming;
-        },
-
-        parseICalDate(str) {
-            if (!str.match(/^\d{8}(T\d{6})?$/)) return null;
-            const year = parseInt(str.substring(0,4));
-            const month = parseInt(str.substring(4,6))-1;
-            const day = parseInt(str.substring(6,8));
-            let hour=0,min=0,sec=0;
-            if (str.length>=15 && str.includes('T')) {
-                const time = str.split('T')[1];
-                hour = parseInt(time.substring(0,2));
-                min = parseInt(time.substring(2,4));
-                sec = parseInt(time.substring(4,6));
-            }
-            return new Date(year, month, day, hour, min, sec);
-        },
-
-        formatTime12hr(d) {
-            let h = d.getHours();
-            const m = d.getMinutes();
-            const ampm = h>=12 ? 'pm' : 'am';
-            h = h % 12 || 12;
-            return `${h}:${m.toString().padStart(2,'0')} ${ampm}`;
-        },
 
         addCalendarFeed() {
             const name = document.getElementById('newFeedName').value.trim();
@@ -1245,41 +1428,17 @@ rest_command:
         async refreshCalendarQuests() {
             const feedsRes = await fetch('api.php?action=calendar_feeds');
             if (!feedsRes.ok) { alert('Cannot fetch feeds'); return; }
-            const feedsData = await feedsRes.json();
-            const feeds = feedsData.feeds || [];
+            const feeds = (await feedsRes.json()).feeds || [];
             if (feeds.length === 0) {
                 await this.deleteAllCalendarQuests();
                 return;
             }
-            let allEvents = [];
-            for (const feed of feeds) {
-                try {
-                    const events = await this.fetchCalendarEvents(feed.url);
-                    allEvents.push(...events);
-                } catch(e) { console.warn(e); }
-            }
-            const calendarQuests = [];
-            for (const ev of allEvents) {
-                const startStr = ev.start.toDateString();
-                const name = `📅 ${ev.summary || 'Calendar Event'}`;
-                const id = `cal_${this.hashCode(name + startStr + (ev.end ? ev.end.toDateString() : startStr))}`;
-                calendarQuests.push({
-                    id: id,
-                    name: name,
-                    type: 'calendar',
-                    points: ev.points || 1,
-                    reminder_time: ev.start ? this.formatTime12hr(ev.start) : null,
-                    expires: startStr,
-                    created_at: new Date().toISOString()
-                });
-            }
-            await fetch('api.php?action=calendar_quests', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ quests: calendarQuests, lastUpdated: new Date().toISOString() })
-            });
+            // All iCal fetching/parsing happens in api.php (same code index.html uses)
+            const res = await fetch('api.php?action=sync_calendar_feeds', { method: 'POST' });
+            if (!res.ok) { alert('❌ Calendar sync failed'); return; }
+            const data = await res.json();
             await this.loadStoredCalendarQuests();
-            alert('✅ Calendar quests refreshed');
+            alert(`✅ Calendar quests refreshed (${data.count ?? 0})`);
         },
 
         async loadStoredCalendarQuests() {

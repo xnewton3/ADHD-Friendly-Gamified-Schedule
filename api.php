@@ -75,14 +75,29 @@ error_reporting(E_ALL);
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE');
-header('Access-Control-Allow-Headers: Content-Type, X-Stats-Access-Code');
+header('Access-Control-Allow-Headers: Content-Type, X-Stats-Access-Code, X-API-Key');
+
+// CORS preflight (browser-based Home Assistant cards send this before the real request)
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
 
 define('DATA_DIR', __DIR__ . '/data');
 define('DB_FILE', DATA_DIR . '/data.db');
 
+// Share of main quests that must be done before side quests unlock (the "system default"; adjustable in Manager)
+define('SIDE_UNLOCK_DEFAULT', 25);
+
 // Create data directory if it doesn't exist
 if (!is_dir(DATA_DIR)) {
     mkdir(DATA_DIR, 0755, true);
+}
+
+// Block direct web access to the data folder (database + app_settings.json with the API key).
+// Apache 2.4 reads this file; verify by opening /data/data.db in a browser -> must be 403.
+if (is_dir(DATA_DIR) && !file_exists(DATA_DIR . '/.htaccess')) {
+    @file_put_contents(DATA_DIR . '/.htaccess', "Require all denied\n");
 }
 
 // Initialize database and tables
@@ -196,6 +211,31 @@ function init_database() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS quest_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        trigger_quest_id TEXT NOT NULL,
+        linked_quest_id TEXT NOT NULL,
+        wait_minutes INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(trigger_quest_id, linked_quest_id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS daily_reminder_overrides (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        reminder_time TEXT NOT NULL,
+        UNIQUE(user_id, quest_id, date)
+    )");
+
+    // Add new quest columns to existing installs (safe to re-run)
+    foreach (['priority INTEGER DEFAULT 0', 'ha_completable INTEGER DEFAULT 0'] as $col) {
+        try { $db->exec("ALTER TABLE quests ADD COLUMN $col"); } catch (Exception $e) {}
+    }
 
     // Seed achievements by name – safe to add new ones to existing installs
     $allAchievements = [
@@ -329,11 +369,32 @@ try {
 }
 
 // Helper function to check if user is logged in via password
+// The "stay logged in" cookie is a signed token (expiry + HMAC), so it can't be forged by
+// hand-editing a cookie. The signing key is derived from the password: changing the password
+// logs every device out.
+function authCookieSecret() {
+    return hash('sha256', 'quest-tracker-auth|' . PASSKEY_CREATION_KEY);
+}
+
+function makeAuthToken() {
+    $expires = time() + (21 * 24 * 3600);
+    return $expires . '.' . hash_hmac('sha256', (string)$expires, authCookieSecret());
+}
+
+function validAuthToken($token) {
+    if (!is_string($token) || strpos($token, '.') === false) return false;
+    $parts   = explode('.', $token, 2);
+    $expires = $parts[0];
+    $sig     = $parts[1];
+    if (!ctype_digit($expires) || (int)$expires < time()) return false;
+    return hash_equals(hash_hmac('sha256', $expires, authCookieSecret()), $sig);
+}
+
 function isLoggedIn() {
     if (isset($_SESSION['password_verified']) && $_SESSION['password_verified'] === true) {
         return true;
     }
-    if (isset($_COOKIE['password_verified']) && $_COOKIE['password_verified'] === '1') {
+    if (isset($_COOKIE['password_verified']) && validAuthToken($_COOKIE['password_verified'])) {
         $_SESSION['password_verified'] = true;
         return true;
     }
@@ -359,6 +420,37 @@ function get_db() {
 }
 
 // Helper to check if a quest is visible on a given date based on its schedule.
+// "Today" according to the app: uses the saved timezone, and the day rolls over at 3:00 AM
+function appToday() {
+    static $tzName = null;
+    if ($tzName === null) {
+        $f = DATA_DIR . '/app_settings.json';
+        $s = file_exists($f) ? json_decode(file_get_contents($f), true) : [];
+        $tzName = $s['timezone'] ?? 'Europe/Amsterdam';
+        if (!in_array($tzName, DateTimeZone::listIdentifiers())) $tzName = 'Europe/Amsterdam';
+    }
+    $now = new DateTime('now', new DateTimeZone($tzName));
+    if ((int)$now->format('G') < 3) $now->modify('-1 day');
+    return $now->format('Y-m-d');
+}
+
+// Apply per-day reminder_time overrides (set when a linked quest's trigger is completed)
+function applyReminderOverrides(array $quests, $db, $userId, $date) {
+    if (empty($quests)) return $quests;
+    $uid  = SQLite3::escapeString($userId);
+    $d    = SQLite3::escapeString($date);
+    $ids  = array_map(function($q) { return SQLite3::escapeString($q['id']); }, $quests);
+    $in   = "'" . implode("','", $ids) . "'";
+    $res  = $db->query("SELECT quest_id, reminder_time FROM daily_reminder_overrides WHERE user_id='$uid' AND date='$d' AND quest_id IN ($in)");
+    $map  = [];
+    while ($r = $res->fetchArray(SQLITE3_ASSOC)) $map[$r['quest_id']] = $r['reminder_time'];
+    foreach ($quests as &$q) {
+        if (isset($map[$q['id']])) $q['reminder_time'] = $map[$q['id']];
+    }
+    unset($q);
+    return $quests;
+}
+
 function isQuestVisibleOnDate($quest, $date, $db, $userId) {
     $schedule = $quest['schedule'] ?? '';
     $questId  = $quest['id'];
@@ -396,6 +488,18 @@ function isQuestVisibleOnDate($quest, $date, $db, $userId) {
         $visible = true;
     } elseif ($schedule === 'Weekend') {
         $visible = in_array(date('l', strtotime($date)), ['Saturday', 'Sunday']);
+    } elseif (preg_match('/^(odd|even|1st|2nd|3rd|4th) Daily$/', $schedule, $pm)) {
+        // Patterned daily: e.g. "odd Daily" = every day on odd ISO weeks
+        $wn = (int)date('W', strtotime($date));
+        switch ($pm[1]) {
+            case 'odd':  $visible = ($wn % 2 === 1); break;
+            case 'even': $visible = ($wn % 2 === 0); break;
+            case '1st':  $visible = (($wn - 1) % 4 === 0); break;
+            case '2nd':  $visible = (($wn - 2) % 4 === 0); break;
+            case '3rd':  $visible = (($wn - 3) % 4 === 0); break;
+            case '4th':  $visible = (($wn - 4) % 4 === 0); break;
+            default:     $visible = false;
+        }
     } elseif ($schedule === 'DD') {
         $visible = in_array(date('l', strtotime($date)), ['Thursday', 'Friday', 'Saturday', 'Sunday']);
     } elseif (strpos($schedule, 'days:') !== false) {
@@ -551,7 +655,7 @@ function check_achievements($db, $userId) {
             $stmt->execute();
 
             if ($ach['points_reward'] > 0) {
-                $today = date('Y-m-d');
+                $today = appToday();
                 $stmt = $db->prepare("INSERT INTO history (user_id, type, description, points, date) VALUES (:user, 'achievement', :desc, :points, :date)");
                 $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
                 $stmt->bindValue(':desc', "Achievement Unlocked: {$ach['name']}", SQLITE3_TEXT);
@@ -582,6 +686,15 @@ function parseICalDatePHP($dateStr) {
     return new DateTime(sprintf('%04d-%02d-%02d %02d:%02d:%02d', $year, $month, $day, $hour, $min, $sec));
 }
 
+// iCal event description marker. The word "ical" opts an event in; an optional ",N" (or ":N") gives its points.
+// Everything after the marker is ignored.
+//   ical,1.anything   -> 1 point        ical. anything     -> 1 point (default)
+//   ical,5. anything  -> 5 points       no "ical" word     -> null (event is skipped)
+function icalDescriptionPoints($desc) {
+    if (!is_string($desc) || !preg_match('/\bical(?:\s*[,:]\s*(\d+))?/i', $desc, $m)) return null;
+    return isset($m[1]) ? max(1, (int)$m[1]) : 1;
+}
+
 function parseICalPHP($icalData, $todayStr) {
     $events = [];
     $lines  = preg_split('/\r?\n/', $icalData);
@@ -596,7 +709,7 @@ function parseICalPHP($icalData, $todayStr) {
         if ($line === 'BEGIN:VEVENT') {
             $current = [];
         } elseif ($line === 'END:VEVENT' && $current !== null && isset($current['summary'])) {
-            if (isset($current['description']) && stripos($current['description'], 'ical') !== false) {
+            if (isset($current['points'])) { // only events whose description has the ical marker
                 $events[] = $current;
             }
             $current = null;
@@ -609,7 +722,7 @@ function parseICalPHP($icalData, $todayStr) {
                 case 'DESCRIPTION':
                     $d = str_replace(['\\,','\\n','\\;'],[',',"\n",';'], $value);
                     $current['description'] = $d;
-                    $current['points'] = preg_match('/ical:(\d+)/i', $d, $m) ? (int)$m[1] : 1; break;
+                    $current['points'] = icalDescriptionPoints($d); break;
                 case 'DTSTART': $current['start'] = parseICalDatePHP($value); break;
                 case 'DTEND':   $current['end']   = parseICalDatePHP($value); break;
                 case 'RRULE':   $current['rrule'] = $value; break;
@@ -664,10 +777,13 @@ $method = $_SERVER['REQUEST_METHOD'];
 $public_actions = ['test', 'login_status', 'verify_password', 'logout', 'stats_access_code', 'ical_proxy', 'get_theme'];
 
 // Stats endpoints: can be accessed via stats code header (GET only) OR normal login
-$stats_actions = ['', 'history', 'history_stats', 'points', 'today_bonus_points', 'completions', 'achievements', 'shop_items', 'calendar_feeds', 'calendar_quests', 'avatar', 'last_reset', 'visible_quests'];
+$stats_actions = ['', 'history', 'history_stats', 'points', 'today_bonus_points', 'completions', 'achievements', 'shop_items', 'calendar_feeds', 'calendar_quests', 'avatar', 'last_reset', 'visible_quests', 'get_timezone'];
+
+// Webhook / Home Assistant endpoints: no session login, but every one of them checks the API key
+$webhook_actions = ['ha_quests', 'ha_status', 'ha_shop', 'ha_complete', 'ha_add_quest', 'ha_redeem', 'ha_delete_quest'];
 
 // Authentication logic
-if (!in_array($action, $public_actions)) {
+if (!in_array($action, $public_actions) && !in_array($action, $webhook_actions)) {
     // Allow GET requests with valid stats code
     if ($method === 'GET' && in_array($action, $stats_actions) && isStatsAuthorized()) {
         // Stats code granted – continue
@@ -702,10 +818,16 @@ try {
         $data = json_decode(file_get_contents('php://input'), true);
         $password = $data['password'] ?? '';
 
-        if ($password === PASSKEY_CREATION_KEY) {
+        if (is_string($password) && hash_equals((string)PASSKEY_CREATION_KEY, $password)) {
             $_SESSION['password_verified'] = true;
             // Set a cookie that lasts 3 weeks (21 days) – renewed on each page load
-            setcookie('password_verified', '1', time() + (21 * 24 * 3600), '/', '', false, true);
+            setcookie('password_verified', makeAuthToken(), [
+                'expires'  => time() + (21 * 24 * 3600),
+                'path'     => '/',
+                'secure'   => !empty($_SERVER['HTTPS']),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
             echo json_encode(['success' => true]);
         } else {
             http_response_code(401);
@@ -766,13 +888,15 @@ try {
         }
 
         // Filter visible quests for today
-        $today = date('Y-m-d');
+        $today = appToday();
         $quests = [];
         foreach ($allQuests as $quest) {
             if (isQuestVisibleOnDate($quest, $today, $db, $userId)) {
                 $quests[] = $quest;
             }
         }
+
+        $quests = applyReminderOverrides($quests, $db, $userId, $today);
 
         // Get shop items
         $stmt = $db->prepare("SELECT * FROM shop_items WHERE user_id = :id");
@@ -814,7 +938,7 @@ try {
         $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as total FROM history WHERE user_id = '$userId'", true);
         $totalPoints = $result['total'] ?? 0;
 
-        $today = date('Y-m-d');
+        $today = appToday();
         $result = $db->querySingle("SELECT SUM(CAST(points AS INTEGER)) as today_total FROM history WHERE user_id = '$userId' AND date = '$today' AND CAST(points AS INTEGER) > 0", true);
         $todayPoints = $result['today_total'] ?? 0;
 
@@ -829,7 +953,7 @@ try {
         $userId = get_user_id();
         $result = $db->query("SELECT points, date FROM history WHERE user_id = '$userId' AND type = 'bonus'");
         $todayBonus = 0;
-        $todayTimestamp = strtotime(date('Y-m-d'));
+        $todayTimestamp = strtotime(appToday());
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             $storedDate = $row['date'];
             $storedTimestamp = strtotime($storedDate);
@@ -866,9 +990,9 @@ try {
     if ($method === 'GET' && $action === 'completions') {
         $db = get_db();
         $userId = get_user_id();
-        $dateParam = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+        $dateParam = isset($_GET['date']) ? $_GET['date'] : appToday();
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateParam)) {
-            $dateParam = date('Y-m-d');
+            $dateParam = appToday();
         }
         $stmt = $db->prepare("SELECT quest_id, completed, points_earned FROM quest_completions WHERE user_id = :user AND completion_date = :date");
         $stmt->bindValue(':user', $userId, SQLITE3_TEXT);
@@ -891,7 +1015,7 @@ try {
         $data = json_decode(file_get_contents('php://input'), true);
         $db = get_db();
         $userId = get_user_id();
-        $today = date('Y-m-d');
+        $today = appToday();
 
         $questId = $data['quest_id'];
         $completed = $data['completed'] ? 1 : 0;
@@ -949,8 +1073,32 @@ try {
         }
 
         check_achievements($db, $userId);
+
+        // ── Quest links: update daily reminder overrides for linked quests ────────
+        $reminderUpdates = [];
+        if ($completed) {
+            $uid2 = SQLite3::escapeString($userId);
+            $qid2 = SQLite3::escapeString($questId);
+            $sFile = DATA_DIR . '/app_settings.json';
+            $sData = file_exists($sFile) ? json_decode(file_get_contents($sFile), true) : [];
+            $tz    = new DateTimeZone($sData['timezone'] ?? 'Europe/Amsterdam');
+            $now   = new DateTime('now', $tz);
+            $eod   = (new DateTime($today . ' 00:00:00', $tz))->modify('+1 day 2 hours 59 minutes'); // cap at 11:59 PM
+
+            $linksRes = $db->query("SELECT id, linked_quest_id, wait_minutes FROM quest_links WHERE trigger_quest_id='$qid2' AND user_id='$uid2'");
+            while ($lnk = $linksRes->fetchArray(SQLITE3_ASSOC)) {
+                $lqid     = SQLite3::escapeString($lnk['linked_quest_id']);
+                $newTime  = clone $now;
+                $newTime->modify('+' . (int)$lnk['wait_minutes'] . ' minutes');
+                if ($newTime > $eod) $newTime = $eod;
+                $formatted = $newTime->format('g:i a'); // "10:34 am"
+                $db->exec("INSERT OR REPLACE INTO daily_reminder_overrides (user_id, quest_id, date, reminder_time) VALUES ('$uid2', '$lqid', '$today', '$formatted')");
+                $reminderUpdates[] = ['quest_id' => $lnk['linked_quest_id'], 'reminder_time' => $formatted];
+            }
+        }
+
         $db->close();
-        echo json_encode(['ok' => true, 'completed' => (bool)$completed]);
+        echo json_encode(['ok' => true, 'completed' => (bool)$completed, 'reminder_updates' => $reminderUpdates]);
         exit;
     }
 
@@ -959,7 +1107,7 @@ try {
         $data = json_decode(file_get_contents('php://input'), true);
         $db = get_db();
         $userId = get_user_id();
-        $today = date('Y-m-d');
+        $today = appToday();
         $bonusPoints = $data['points'] ?? 0;
         $missedCount = $data['count'] ?? 0;
 
@@ -1041,7 +1189,7 @@ try {
 
     // GET quests visible on a given date
     if ($method === 'GET' && $action === 'visible_quests') {
-        $date = $_GET['date'] ?? date('Y-m-d');
+        $date = $_GET['date'] ?? appToday();
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             http_response_code(400);
             echo json_encode(['error' => 'Invalid date format']);
@@ -1068,8 +1216,66 @@ try {
             }
         }
 
+        $visible = applyReminderOverrides($visible, $db, $userId, $date);
+
         $db->close();
         echo json_encode(['quests' => $visible]);
+        exit;
+    }
+
+    // ============ QUEST LINKS ============
+
+    if ($method === 'GET' && $action === 'get_quest_links') {
+        $qid = $_GET['quest_id'] ?? '';
+        if (!$qid) { http_response_code(400); echo json_encode(['error' => 'quest_id required']); exit; }
+        $db  = get_db();
+        $uid = SQLite3::escapeString(get_user_id());
+        $qesc = SQLite3::escapeString($qid);
+        $res = $db->query("SELECT ql.id, ql.linked_quest_id, ql.wait_minutes, q.name, q.points, q.schedule, q.reminder_time, q.type FROM quest_links ql JOIN quests q ON q.id=ql.linked_quest_id WHERE ql.trigger_quest_id='$qesc' AND ql.user_id='$uid' ORDER BY ql.created_at ASC");
+        $links = [];
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) $links[] = $row;
+        $db->close();
+        echo json_encode(['links' => $links]);
+        exit;
+    }
+
+    if ($method === 'POST' && $action === 'add_quest_link') {
+        $data      = json_decode(file_get_contents('php://input'), true);
+        $triggerId = $data['trigger_quest_id'] ?? '';
+        $linkedId  = $data['linked_quest_id']  ?? '';
+        $waitMins  = min(720, max(0, (int)($data['wait_minutes'] ?? 0)));
+        if (!$triggerId || !$linkedId)      { http_response_code(400); echo json_encode(['error' => 'trigger_quest_id and linked_quest_id required']); exit; }
+        if ($triggerId === $linkedId)        { http_response_code(400); echo json_encode(['error' => 'Cannot link a quest to itself']); exit; }
+        $db   = get_db(); $userId = get_user_id();
+        $stmt = $db->prepare("INSERT OR REPLACE INTO quest_links (user_id, trigger_quest_id, linked_quest_id, wait_minutes) VALUES (:u,:t,:l,:w)");
+        $stmt->bindValue(':u', $userId,    SQLITE3_TEXT);    $stmt->bindValue(':t', $triggerId, SQLITE3_TEXT);
+        $stmt->bindValue(':l', $linkedId,  SQLITE3_TEXT);    $stmt->bindValue(':w', $waitMins,  SQLITE3_INTEGER);
+        $stmt->execute();
+        $id = $db->lastInsertRowID();
+        $db->close();
+        echo json_encode(['ok' => true, 'id' => $id]);
+        exit;
+    }
+
+    if ($method === 'POST' && $action === 'update_quest_link_wait') {
+        $data    = json_decode(file_get_contents('php://input'), true);
+        $linkId  = (int)($data['id'] ?? 0);
+        $waitMins = min(720, max(0, (int)($data['wait_minutes'] ?? 0)));
+        if (!$linkId) { http_response_code(400); echo json_encode(['error' => 'id required']); exit; }
+        $db  = get_db(); $uid = SQLite3::escapeString(get_user_id());
+        $db->exec("UPDATE quest_links SET wait_minutes=$waitMins WHERE id=$linkId AND user_id='$uid'");
+        $db->close();
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($method === 'DELETE' && $action === 'remove_quest_link') {
+        $linkId = (int)($_GET['id'] ?? 0);
+        if (!$linkId) { http_response_code(400); echo json_encode(['error' => 'id required']); exit; }
+        $db = get_db(); $uid = SQLite3::escapeString(get_user_id());
+        $db->exec("DELETE FROM quest_links WHERE id=$linkId AND user_id='$uid'");
+        $db->close();
+        echo json_encode(['ok' => true]);
         exit;
     }
 
@@ -1167,7 +1373,7 @@ try {
         $db       = get_db();
         $userId   = get_user_id();
         $uid      = SQLite3::escapeString($userId);
-        $today    = date('Y-m-d');
+        $today    = appToday();
         $itemName = $data['name'];
         $baseCost = (int)($data['base_cost'] ?? $data['cost']); // base_cost preferred
 
@@ -1433,7 +1639,7 @@ try {
             $ins->bindValue(':t',  $e['type'],                        SQLITE3_TEXT);
             $ins->bindValue(':d',  $e['description'],                 SQLITE3_TEXT);
             $ins->bindValue(':p',  (int)($e['points'] ?? 0),          SQLITE3_INTEGER);
-            $ins->bindValue(':dt', $e['date'] ?? date('Y-m-d'),       SQLITE3_TEXT);
+            $ins->bindValue(':dt', $e['date'] ?? appToday(),       SQLITE3_TEXT);
             $ins->execute();
         }
         $db->close();
@@ -1455,7 +1661,7 @@ try {
         $prepWindow->modify('+5 minutes');
         $prepTime = $prepWindow->format('g:i a');
 
-        $today = date('Y-m-d');
+        $today = appToday();
         $sentReminders = [];
         if (file_exists($sentLog)) {
             $lines = file($sentLog, FILE_IGNORE_NEW_LINES);
@@ -1541,8 +1747,8 @@ try {
             exit;
         }
 
-        $insert = $db->prepare("INSERT INTO quests (id, user_id, name, type, points, schedule, reminder_time, days_visible, specific_dates, group_name, group_step, from_calendar)
-            VALUES (:id, :user, :name, :type, :points, :schedule, :reminder, :days_visible, :specific_dates, :group_name, :group_step, 0)");
+        $insert = $db->prepare("INSERT INTO quests (id, user_id, name, type, points, schedule, reminder_time, days_visible, specific_dates, group_name, group_step, from_calendar, priority, ha_completable)
+            VALUES (:id, :user, :name, :type, :points, :schedule, :reminder, :days_visible, :specific_dates, :group_name, :group_step, 0, :priority, :ha_completable)");
 
         foreach ($quests as $quest) {
             if (!empty($quest['from_calendar'])) continue;
@@ -1561,6 +1767,8 @@ try {
             $insert->bindValue(':specific_dates', $specificDates, SQLITE3_TEXT);
             $insert->bindValue(':group_name', $quest['group_name'] ?? null, SQLITE3_TEXT);
             $insert->bindValue(':group_step', $quest['group_step'] ?? null, SQLITE3_INTEGER);
+            $insert->bindValue(':priority', !empty($quest['priority']) ? 1 : 0, SQLITE3_INTEGER);
+            $insert->bindValue(':ha_completable', !empty($quest['ha_completable']) ? 1 : 0, SQLITE3_INTEGER);
             $insert->execute();
         }
 
@@ -1876,24 +2084,253 @@ try {
     // GET timezone setting
     if ($method === 'GET' && $action === 'get_timezone') {
         $file = DATA_DIR . '/app_settings.json';
-        $settings = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
-        echo json_encode(['timezone' => $settings['timezone'] ?? 'Europe/Amsterdam']);
+        $s    = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
+        echo json_encode([
+            'timezone'    => $s['timezone']    ?? 'Europe/Amsterdam',
+            'time_format' => $s['time_format'] ?? '12h',
+            'date_format' => $s['date_format'] ?? 'DD/MM/YYYY',
+            'side_unlock_percent' => (int)($s['side_unlock_percent'] ?? SIDE_UNLOCK_DEFAULT),
+            'side_unlock_default' => SIDE_UNLOCK_DEFAULT,
+        ]);
         exit;
     }
 
-    // POST set timezone
+    // POST set timezone (also accepts time_format and date_format)
     if ($method === 'POST' && $action === 'set_timezone') {
         $input = json_decode(file_get_contents('php://input'), true);
-        $tz = $input['timezone'] ?? '';
-        if (!in_array($tz, DateTimeZone::listIdentifiers())) {
-            http_response_code(400);
-            echo json_encode(['error' => 'Invalid timezone identifier']);
+        $file  = DATA_DIR . '/app_settings.json';
+        $s     = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
+        if (isset($input['timezone'])) {
+            $tz = $input['timezone'];
+            if (!in_array($tz, DateTimeZone::listIdentifiers())) {
+                http_response_code(400); echo json_encode(['error' => 'Invalid timezone']); exit;
+            }
+            $s['timezone'] = $tz;
+        }
+        if (isset($input['time_format'])) $s['time_format'] = in_array($input['time_format'], ['12h','24h']) ? $input['time_format'] : '12h';
+        if (isset($input['date_format'])) $s['date_format'] = in_array($input['date_format'], ['DD/MM/YYYY','MM/DD/YYYY','YYYY-MM-DD']) ? $input['date_format'] : 'DD/MM/YYYY';
+        if (isset($input['side_unlock_percent'])) $s['side_unlock_percent'] = max(0, min(100, (int)$input['side_unlock_percent']));
+        file_put_contents($file, json_encode($s, JSON_PRETTY_PRINT));
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ============ WEBHOOK / HOME ASSISTANT API ============
+
+    $webhookKey  = (function() {
+        $f = DATA_DIR . '/app_settings.json';
+        $s = file_exists($f) ? json_decode(file_get_contents($f), true) : [];
+        return $s['webhook_api_key'] ?? null;
+    })();
+    $webhookAuth = $webhookKey && hash_equals(
+        $webhookKey,
+        $_GET['api_key'] ?? ($_SERVER['HTTP_X_API_KEY'] ?? '')
+    );
+
+    // GET ha_quests
+    if ($method === 'GET' && $action === 'ha_quests') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $db     = get_db(); $userId = get_user_id();
+        $today  = appToday();
+        $uid    = SQLite3::escapeString($userId);
+        $result = $db->query("SELECT * FROM quests WHERE user_id='$uid' ORDER BY sort_order ASC");
+        $out    = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            if (!isQuestVisibleOnDate($row, $today, $db, $userId)) continue;
+            $qid          = SQLite3::escapeString($row['id']);
+            $row['completed'] = (bool)$db->querySingle("SELECT completed FROM quest_completions WHERE quest_id='$qid' AND user_id='$uid' AND completion_date='$today' AND completed=1");
+            unset($row['user_id']);
+            $out[] = $row;
+        }
+        $db->close();
+        echo json_encode(['date' => $today, 'quests' => $out]);
+        exit;
+    }
+
+    // GET ha_status
+    if ($method === 'GET' && $action === 'ha_status') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $db    = get_db(); $uid = SQLite3::escapeString(get_user_id());
+        $today = appToday();
+        echo json_encode([
+            'date'            => $today,
+            'total_points'    => (int)$db->querySingle("SELECT COALESCE(SUM(points),0) FROM history WHERE user_id='$uid' AND points>0"),
+            'today_points'    => (int)$db->querySingle("SELECT COALESCE(SUM(points),0) FROM history WHERE user_id='$uid' AND date='$today' AND points>0"),
+            'completed_today' => (int)$db->querySingle("SELECT COUNT(*) FROM quest_completions WHERE user_id='$uid' AND completion_date='$today' AND completed=1"),
+            'active_days'     => (int)$db->querySingle("SELECT COUNT(DISTINCT completion_date) FROM quest_completions WHERE user_id='$uid' AND completed=1"),
+        ]);
+        $db->close();
+        exit;
+    }
+
+    // GET ha_shop
+    if ($method === 'GET' && $action === 'ha_shop') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $db  = get_db(); $uid = SQLite3::escapeString(get_user_id());
+        $res = $db->query("SELECT id, name, cost FROM shop_items WHERE user_id='$uid' ORDER BY cost ASC");
+        $items = [];
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) $items[] = $row;
+        $balance   = (int)$db->querySingle("SELECT COALESCE(SUM(CAST(points AS INTEGER)),0) FROM history WHERE user_id='$uid'");
+        $sFile     = DATA_DIR . '/app_settings.json';
+        $sData     = file_exists($sFile) ? json_decode(file_get_contents($sFile), true) : [];
+        $inflation = 0;
+        if (($sData['shop_inflation_enabled'] ?? true) && !empty($items)) {
+            $maxCost = max(array_column($items, 'cost'));
+            if ($maxCost > 0 && $balance > $maxCost * 2) $inflation = (int)ceil(($balance - $maxCost * 2) / 2);
+        }
+        $db->close();
+        echo json_encode(['items' => $items, 'inflation' => $inflation, 'balance' => $balance]);
+        exit;
+    }
+
+    // POST ha_complete — mark a quest done (or undone) from Home Assistant / any webhook client.
+    //   ha_completable quests: every call with completed=true pays out again (multi-complete per day).
+    //   Normal quests: standard toggle, one completion per day.
+    if ($method === 'POST' && $action === 'ha_complete') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $data      = json_decode(file_get_contents('php://input'), true);
+        $questId   = $data['quest_id']   ?? '';
+        $questName = $data['quest_name'] ?? '';
+        $points    = isset($data['points']) ? (int)$data['points'] : null;
+        $completed = isset($data['completed']) ? (bool)$data['completed'] : true;
+        if (!$questId) { http_response_code(400); echo json_encode(['error' => 'quest_id required']); exit; }
+        $db     = get_db(); $userId = get_user_id();
+        $uid    = SQLite3::escapeString($userId);
+        $qid    = SQLite3::escapeString($questId);
+        $today  = appToday();
+
+        // Look the quest up so name/points don't have to be sent by the caller
+        $q = $db->querySingle("SELECT name, points, COALESCE(ha_completable,0) AS ha FROM quests WHERE id='$qid' AND user_id='$uid'", true);
+        if (!$q) { $db->close(); http_response_code(404); echo json_encode(['error' => 'Quest not found']); exit; }
+        if ($questName === '') $questName = $q['name'];
+        if ($points === null)  $points    = (int)$q['points'];
+        $isHaOnly = (int)$q['ha'] === 1;
+        $desc     = "Completed quest: " . $questName;
+
+        $existing = $db->querySingle("SELECT id FROM quest_completions WHERE quest_id='$qid' AND user_id='$uid' AND completion_date='$today'");
+        $alreadyDone = $existing ? (int)$db->querySingle("SELECT completed FROM quest_completions WHERE id=$existing") === 1 : false;
+
+        if ($completed && $alreadyDone && !$isHaOnly) {
+            // Normal quest already completed today: don't double-pay
+            $db->close();
+            echo json_encode(['ok' => true, 'quest_id' => $questId, 'completed' => true, 'note' => 'already completed today', 'reminder_updates' => []]);
             exit;
         }
-        $file = DATA_DIR . '/app_settings.json';
-        $settings = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
-        $settings['timezone'] = $tz;
-        file_put_contents($file, json_encode($settings, JSON_PRETTY_PRINT));
+
+        // Upsert today's completion row
+        if ($existing) {
+            $stmt = $db->prepare("UPDATE quest_completions SET completed=:c, points_earned=:p WHERE id=:id");
+            $stmt->bindValue(':c', $completed ? 1 : 0, SQLITE3_INTEGER);
+            $stmt->bindValue(':p', $completed ? $points : 0, SQLITE3_INTEGER);
+            $stmt->bindValue(':id', $existing, SQLITE3_INTEGER);
+            $stmt->execute();
+        } else {
+            $stmt = $db->prepare("INSERT INTO quest_completions (quest_id,user_id,completion_date,completed,points_earned) VALUES (:q,:u,:d,:c,:p)");
+            $stmt->bindValue(':q', $questId, SQLITE3_TEXT);  $stmt->bindValue(':u', $userId, SQLITE3_TEXT);
+            $stmt->bindValue(':d', $today, SQLITE3_TEXT);    $stmt->bindValue(':c', $completed ? 1 : 0, SQLITE3_INTEGER);
+            $stmt->bindValue(':p', $completed ? $points : 0, SQLITE3_INTEGER);
+            $stmt->execute();
+        }
+
+        // History (prepared statements, no manual quote escaping)
+        if ($completed) {
+            $stmt = $db->prepare("INSERT INTO history (user_id,type,description,points,date) VALUES (:u,'quest_complete',:d,:p,:date)");
+            $stmt->bindValue(':u', $userId, SQLITE3_TEXT);  $stmt->bindValue(':d', $desc, SQLITE3_TEXT);
+            $stmt->bindValue(':p', $points, SQLITE3_INTEGER); $stmt->bindValue(':date', $today, SQLITE3_TEXT);
+            $stmt->execute();
+        } else {
+            $stmt = $db->prepare("DELETE FROM history WHERE id=(SELECT id FROM history WHERE user_id=:u AND type='quest_complete' AND description=:d AND date=:date ORDER BY id DESC LIMIT 1)");
+            $stmt->bindValue(':u', $userId, SQLITE3_TEXT);  $stmt->bindValue(':d', $desc, SQLITE3_TEXT);
+            $stmt->bindValue(':date', $today, SQLITE3_TEXT);
+            $stmt->execute();
+        }
+
+        // Linked quests: completion time + wait time -> today's reminder override
+        $reminderUpdates = [];
+        if ($completed) {
+            $sFile = DATA_DIR . '/app_settings.json';
+            $sData = file_exists($sFile) ? json_decode(file_get_contents($sFile), true) : [];
+            $tz    = new DateTimeZone($sData['timezone'] ?? 'Europe/Amsterdam');
+            $now   = new DateTime('now', $tz);
+            $eod   = (new DateTime($today . ' 00:00:00', $tz))->modify('+1 day 2 hours 59 minutes');
+            $lr    = $db->query("SELECT linked_quest_id, wait_minutes FROM quest_links WHERE trigger_quest_id='$qid' AND user_id='$uid'");
+            while ($lnk = $lr->fetchArray(SQLITE3_ASSOC)) {
+                $lqid = SQLite3::escapeString($lnk['linked_quest_id']);
+                $t    = clone $now;
+                $t->modify('+' . (int)$lnk['wait_minutes'] . ' minutes');
+                if ($t > $eod) $t = clone $eod;
+                $fmt  = $t->format('g:i a');
+                $db->exec("INSERT OR REPLACE INTO daily_reminder_overrides (user_id,quest_id,date,reminder_time) VALUES ('$uid','$lqid','$today','$fmt')");
+                $reminderUpdates[] = ['quest_id' => $lnk['linked_quest_id'], 'reminder_time' => $fmt];
+            }
+        }
+
+        check_achievements($db, $userId);
+        $db->close();
+        echo json_encode(['ok' => true, 'quest_id' => $questId, 'completed' => $completed, 'reminder_updates' => $reminderUpdates]);
+        exit;
+    }
+
+    // POST ha_add_quest
+    if ($method === 'POST' && $action === 'ha_add_quest') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $data     = json_decode(file_get_contents('php://input'), true);
+        $name     = trim($data['name']     ?? '');
+        $type     = $data['type']          ?? 'side';
+        $points   = (int)($data['points']  ?? 1);
+        $schedule = $data['schedule']      ?? 'Daily';
+        $reminder = $data['reminder_time'] ?? null;
+        if (!$name) { http_response_code(400); echo json_encode(['error' => 'name required']); exit; }
+        $db   = get_db(); $id = 'ha-' . bin2hex(random_bytes(8));
+        $stmt = $db->prepare("INSERT INTO quests (id,user_id,name,type,points,schedule,reminder_time,priority,ha_completable,created_at) VALUES (:id,:u,:n,:t,:p,:s,:r,:pri,:ha,CURRENT_TIMESTAMP)");
+        $stmt->bindValue(':pri', !empty($data['priority']) ? 1 : 0, SQLITE3_INTEGER);
+        $stmt->bindValue(':ha',  !empty($data['ha_completable']) ? 1 : 0, SQLITE3_INTEGER);
+        $stmt->bindValue(':id',$id,SQLITE3_TEXT);      $stmt->bindValue(':u',get_user_id(),SQLITE3_TEXT);
+        $stmt->bindValue(':n',$name,SQLITE3_TEXT);     $stmt->bindValue(':t',$type,SQLITE3_TEXT);
+        $stmt->bindValue(':p',$points,SQLITE3_INTEGER);$stmt->bindValue(':s',$schedule,SQLITE3_TEXT);
+        $stmt->bindValue(':r',$reminder,SQLITE3_TEXT);
+        $stmt->execute();
+        $db->close();
+        echo json_encode(['ok' => true, 'id' => $id, 'name' => $name]);
+        exit;
+    }
+
+    // POST ha_redeem
+    if ($method === 'POST' && $action === 'ha_redeem') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $data     = json_decode(file_get_contents('php://input'), true);
+        $itemName = $data['name']      ?? '';
+        $baseCost = (int)($data['base_cost'] ?? $data['cost'] ?? 0);
+        if (!$itemName || !$baseCost) { http_response_code(400); echo json_encode(['error' => 'name and base_cost required']); exit; }
+        $db      = get_db(); $userId = get_user_id();
+        $uid     = SQLite3::escapeString($userId); $today = appToday();
+        $balance = (int)$db->querySingle("SELECT COALESCE(SUM(CAST(points AS INTEGER)),0) FROM history WHERE user_id='$uid'");
+        $sFile   = DATA_DIR . '/app_settings.json'; $sData = file_exists($sFile) ? json_decode(file_get_contents($sFile), true) : [];
+        $final   = $baseCost;
+        if ($sData['shop_inflation_enabled'] ?? true) {
+            $maxCost = (int)$db->querySingle("SELECT COALESCE(MAX(cost),0) FROM shop_items WHERE user_id='$uid'");
+            if ($maxCost > 0 && $balance > $maxCost * 2) $final = $baseCost + (int)ceil(($balance - $maxCost * 2) / 2);
+        }
+        if ($balance >= $final) {
+            $stmt = $db->prepare("INSERT INTO history (user_id,type,description,points,date) VALUES (:u,'reward_redeem',:d,:p,:date)");
+            $stmt->bindValue(':u',$userId,SQLITE3_TEXT); $stmt->bindValue(':d',"Redeemed $itemName",SQLITE3_TEXT);
+            $stmt->bindValue(':p',-$final,SQLITE3_INTEGER); $stmt->bindValue(':date',$today,SQLITE3_TEXT);
+            $stmt->execute(); check_achievements($db, $userId); $db->close();
+            echo json_encode(['ok' => true, 'new_balance' => $balance - $final, 'cost_paid' => $final]);
+        } else { $db->close(); echo json_encode(['ok' => false, 'error' => 'Insufficient points', 'balance' => $balance, 'cost' => $final]); }
+        exit;
+    }
+
+    // DELETE ha_delete_quest
+    if ($method === 'DELETE' && $action === 'ha_delete_quest') {
+        if (!$webhookAuth) { http_response_code(401); echo json_encode(['error' => 'Invalid or missing api_key']); exit; }
+        $questId = $_GET['quest_id'] ?? (json_decode(file_get_contents('php://input'), true)['quest_id'] ?? '');
+        if (!$questId) { http_response_code(400); echo json_encode(['error' => 'quest_id required']); exit; }
+        $db  = get_db(); $qid = SQLite3::escapeString($questId); $uid = SQLite3::escapeString(get_user_id());
+        $db->exec("DELETE FROM quests WHERE id='$qid' AND user_id='$uid'");
+        $db->exec("DELETE FROM quest_completions WHERE quest_id='$qid' AND user_id='$uid'");
+        $db->exec("DELETE FROM quest_links WHERE (trigger_quest_id='$qid' OR linked_quest_id='$qid') AND user_id='$uid'");
+        $db->close();
         echo json_encode(['ok' => true]);
         exit;
     }

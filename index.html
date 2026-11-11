@@ -62,6 +62,7 @@
         .player-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
         .player-details h1 { font-size: 1.5rem; font-weight: 600; color: var(--jade); margin: 0; }
         .points-display { font-size: 0.875rem; color: var(--olive-light); }
+        .header-info { width: 100%; text-align: center; font-size: 0.85rem; color: var(--olive-light); border-top: 1px solid var(--dark-grey-3); padding-top: 0.5rem; }
         .header-actions { display: flex; gap: 0.75rem; align-items: center; }
         .header-actions button { padding: 0.4rem 0.8rem; font-size: 0.85rem; line-height: 1; height: 44px; min-width: 44px; }
         .reload-btn { background: var(--accent); color: var(--dark-grey); }
@@ -76,13 +77,16 @@
         .quest-list { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
         .quest-list.hidden { display: none; }
         .quest-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--dark-grey-3); border-radius: 6px; border-left: 4px solid var(--olive); }
+        .quest-item.priority:not(.completed) { background: color-mix(in srgb, var(--error) 22%, var(--dark-grey)); border-left-color: var(--error); }
+        .quest-ha-indicator { width: 1.25rem; text-align: center; flex-shrink: 0; font-size: 1.1rem; }
         .quest-item.completed { background: color-mix(in srgb, var(--success) 10%, transparent); border-left-color: var(--success); opacity: 0.6; }
         .quest-item.locked { opacity: 0.5; pointer-events: none; }
         .quest-checkbox { width: 24px; height: 24px; cursor: pointer; accent-color: var(--jade); flex-shrink: 0; }
-        .quest-info { flex: 1; }
-        .quest-name { font-weight: 500; color: var(--cream); margin: 0 0 0.25rem 0; }
+        .quest-info { flex: 1; min-width: 0; } /* min-width:0 allows flex child to shrink below content size */
+        .quest-name { font-weight: 500; color: var(--cream); margin: 0 0 0.25rem 0; overflow-wrap: break-word; }
         .quest-item.completed .quest-name { text-decoration: line-through; color: var(--olive-light); }
-        .quest-details { font-size: 0.75rem; color: var(--olive-light); margin: 0; }
+        .quest-details { font-size: 0.75rem; color: var(--olive-light); margin: 0; white-space: normal; overflow-wrap: break-word; }
+        .quest-pills { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; } /* never shrinks */
         .quest-points { background: var(--jade); color: var(--dark-grey); padding: 0.25rem 0.75rem; border-radius: 12px; font-weight: 600; font-size: 0.875rem; white-space: nowrap; flex-shrink: 0; }
         .lock-message { background: color-mix(in srgb, var(--warning) 10%, transparent); border: 1px solid var(--warning); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; text-align: center; color: var(--warning); }
         .sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
@@ -207,6 +211,8 @@
             <button onclick="app.openManager()">⚙️</button>
             <button class="logout-btn-desktop" onclick="app.logout()">Logout</button>
         </div>
+        <!-- Date / week info: last row of the top bar (below nav buttons on mobile, below everything on desktop) -->
+        <div id="weekInfoBar" class="header-info"></div>
     </div>
 
     <div class="container">
@@ -285,6 +291,120 @@
         todayBonusPoints: 0,
 
         // ---------- Normalized date helpers (flips at 3am local) ----------
+        // ── Display preferences ───────────────────────────────────────────────────
+        timeFormat: '12h',
+        dateFormat: 'DD/MM/YYYY',
+        timezone: 'Europe/Amsterdam',
+        sideUnlockPercent: 25,
+
+        async loadDisplayPrefs() {
+            try {
+                const res = await fetch('api.php?action=get_timezone');
+                if (res.ok) {
+                    const d = await res.json();
+                    this.timezone   = d.timezone || this.timezone;
+                    if (d.side_unlock_percent !== undefined) this.sideUnlockPercent = Number(d.side_unlock_percent);
+                    this.timeFormat = d.time_format || '12h';
+                    this.dateFormat = d.date_format || 'DD/MM/YYYY';
+                }
+            } catch(e) {}
+        },
+
+        formatDateStr(date) {
+            const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
+            const dd   = String(d.getDate()).padStart(2, '0');
+            const mm   = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            if (this.dateFormat === 'MM/DD/YYYY') return `${mm}/${dd}/${yyyy}`;
+            if (this.dateFormat === 'YYYY-MM-DD') return `${yyyy}-${mm}-${dd}`;
+            return `${dd}/${mm}/${yyyy}`;
+        },
+
+        getISOWeek(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+        },
+
+        renderWeekInfoBar() {
+            const el = document.getElementById('weekInfoBar');
+            if (!el) return;
+            const today   = new Date();
+            const isoWeek = this.getISOWeek(today);
+            const weekOf4 = ((isoWeek - 1) % 4) + 1;
+            const parity  = isoWeek % 2 === 1 ? 'Odd' : 'Even';
+            const dateStr = this.formatDateStr(today);
+            let timeStr = '';
+            try {
+                timeStr = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: this.timezone, hour: 'numeric', minute: '2-digit',
+                    hour12: this.timeFormat === '12h'
+                }).format(today);
+            } catch (e) {}
+            el.textContent = [timeStr, dateStr, `${parity} week`, `Week ${weekOf4}/4`].filter(Boolean).join('  ·  ');
+        },
+
+        // ── Schedule formatting ───────────────────────────────────────────────────
+
+        formatDayList(days, useOr) {
+            if (!days.length) return '';
+            const conj = useOr ? ' or ' : ' and ';
+            if (days.length === 1) return days[0];
+            if (days.length === 2) return days[0] + conj + days[1];
+            return days.slice(0, -1).join(', ') + conj + days[days.length - 1];
+        },
+
+        formatGroupQuest(name) {
+            const match = name.match(/^(.+?)\s*\((\d+)x\)$/);
+            if (!match) return name;
+            const baseName = match[1];
+            const current  = parseInt(match[2]);
+            const total    = this.quests.filter(q => {
+                const m = q.name.match(/^(.+?)\s*\((\d+)x\)$/);
+                return m && m[1] === baseName;
+            }).length;
+            return `${baseName} (${current}/${total})`;
+        },
+
+        formatSchedule(schedule) {
+            if (!schedule || schedule === 'Daily') return '';
+            if (schedule === 'One-time') return 'One-time';
+            if (schedule.includes('/')) return `Date: ${schedule}`;
+
+            let s = schedule, weekly = false;
+            if (s.startsWith('Weekly:')) { weekly = true; s = s.slice(7); }
+            else if (s === 'Weekly')     { weekly = true; s = 'Daily'; }
+
+            // Extract pattern prefix
+            let pat = 'every';
+            const pm = s.match(/^(odd|even|1st|2nd|3rd|4th) /i);
+            if (pm) { pat = pm[1].toLowerCase(); s = s.slice(pm[0].length); }
+
+            const patLabel = { odd:'odd', even:'even', '1st':'1st', '2nd':'2nd', '3rd':'3rd', '4th':'4th' }[pat] || '';
+            const everyPat = pat === 'every' ? 'Every' : `Every ${patLabel} week`;
+            const oncePat  = pat === 'every' ? 'Once per week' : `Once per ${patLabel} week`;
+
+            if (s === 'Daily') return weekly ? `${oncePat}, every day` : (pat === 'every' ? '' : everyPat);
+            if (s === 'One-time') return 'One-time';
+            if (s === 'Weekend') return weekly ? `${oncePat} on weekends` : `${everyPat === 'Every' ? 'Every' : everyPat} weekend`;
+            if (s === 'DD') return weekly ? `${oncePat} Thu–Sun` : `${everyPat === 'Every' ? 'Every' : everyPat} Thu–Sun`;
+
+            if (s.startsWith('days:')) {
+                const days = s.slice(5).split(',').map(d => d.trim());
+                const list = this.formatDayList(days, weekly);
+                return weekly ? `${oncePat} on ${list}` : `${everyPat} ${list}`;
+            }
+
+            // Legacy single weekday
+            const validDays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+            if (validDays.includes(s)) {
+                return weekly ? `${oncePat} on ${s}` : `${everyPat} ${s}`;
+            }
+
+            return schedule;
+        },
+
         getNormalizedDateObj() {
             const now = new Date();
             if (now.getHours() < 3) {
@@ -325,7 +445,10 @@
         async init() {
             const loggedIn = await this.checkAuth();
             if (loggedIn) {
+                await this.loadDisplayPrefs();
                 await this.loadData();
+                this.renderWeekInfoBar();
+                setInterval(() => this.renderWeekInfoBar(), 30000);
                 this.startReminderChecker();
                 this.checkDailyReset();
                 this.loadAvatar();
@@ -712,56 +835,7 @@
             }
         },
 
-        async addBonusPointsForMissed() {
-            const todayStr = this.getNormalizedDateStr();
-            const lastBonusDate = localStorage.getItem('lastBonusDate');
-            if (lastBonusDate === todayStr) return;
-
-            const yesterdayObj = this.getNormalizedYesterdayObj();
-            const missedQuests = this.quests.filter(quest => quest.missed && !quest.completed);
-
-            if (missedQuests.length > 0) {
-                const bonusPoints = missedQuests.length;
-                this.addToHistory('bonus', `Bonus for ${missedQuests.length} missed quest${missedQuests.length !== 1 ? 's' : ''}`, bonusPoints);
-                await this.loadTodayBonusPoints();
-                localStorage.setItem('lastBonusDate', todayStr);
-                this.saveData();
-                this.render();
-                console.log(`✨ Added ${bonusPoints} bonus points for missed quests`);
-            }
-        },
-
-        addToHistory(type, description, points) {
-            const todayStr = this.getNormalizedDateStr();
-            const entry = { type, description, points, date: todayStr, timestamp: new Date().toISOString() };
-            this.history.push(entry);
-            fetch('api.php?action=history', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entries: [entry] })
-            }).catch(e => console.warn('Could not save to server:', e));
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            this.history = this.history.filter(h => new Date(h.timestamp) > thirtyDaysAgo);
-            this.saveData();
-        },
-
-        async saveData() {
-            if (!this.userData) return;
-            const dataToSave = {
-                user: this.userData,
-                quests: this.quests,
-                history: this.history
-            };
-            localStorage.setItem('questTrackerData', JSON.stringify(dataToSave));
-            try {
-                await fetch('api.php', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(dataToSave)
-                });
-            } catch(e) { console.warn('Could not save to server:', e); }
-        },
+        // NOTE: all points/history/bonus logic lives in api.php. The client only displays.
 
         render() {
             this.updatePoints();
@@ -782,10 +856,15 @@
             this.checkSideQuestUnlock();
         },
 
+        // How many main quests must be done to unlock side quests (percentage is set in Manager)
+        requiredMainCount(total) {
+            return Math.ceil(total * this.sideUnlockPercent / 100);
+        },
+
         checkSideQuestUnlock() {
             const mainQuests = this.quests.filter(q => q.type === 'main');
             const completedMain = mainQuests.filter(q => q.completed).length;
-            this.sideQuestUnlock = completedMain >= Math.ceil(mainQuests.length * 0.25);
+            this.sideQuestUnlock = completedMain >= this.requiredMainCount(mainQuests.length);
         },
 
         async renderMissedQuests() {
@@ -898,7 +977,7 @@
             allMain = this.sortQuestsByReminderTime(allMain);
             allSide = this.sortQuestsByReminderTime(allSide);
             const completedMain = allMain.filter(q => q.completed).length;
-            const required = Math.ceil(allMain.length * 0.25);
+            const required = this.requiredMainCount(allMain.length);
             if (!this.sideQuestUnlock && allSide.length) {
                 const lockMsg = document.createElement('div');
                 lockMsg.className = 'lock-message';
@@ -919,12 +998,23 @@
             quests.forEach(quest => {
                 const reminderHtml = quest.reminder_time ? `<span style="margin-left:0.5rem;">⏰ ${quest.reminder_time}</span>` : '';
                 const item = document.createElement('div');
-                item.className = `quest-item ${quest.completed ? 'completed' : ''}${!unlocked && quest.type === 'side' ? ' locked' : ''}`;
-                const bonusStarHtml = quest.missed ? `<div class="pill bonus-star">🌟</div>` : '';
+                const isHaOnly = !!Number(quest.ha_completable);
+                item.className = `quest-item ${quest.completed ? 'completed' : ''}${!unlocked && quest.type === 'side' ? ' locked' : ''}${Number(quest.priority) ? ' priority' : ''}`;
+                const bonusStarHtml   = quest.missed ? `<div class="pill bonus-star">🌟</div>` : '';
+                const displayName     = this.escapeHtml(this.formatGroupQuest(quest.name));
+                const scheduleLabel   = this.formatSchedule(quest.schedule);
+                const schedulePart    = scheduleLabel ? `<span>${scheduleLabel}</span>` : '';
+                const reminderPart    = quest.reminder_time ? `<span>⏰ ${quest.reminder_time}</span>` : '';
+                const detailsContent  = [schedulePart, reminderPart].filter(Boolean).join(' · ');
                 item.innerHTML = `
-                    <input type="checkbox" class="quest-checkbox" ${quest.completed ? 'checked' : ''} ${!unlocked && quest.type === 'side' ? 'disabled' : ''} onchange="app.toggleQuest('${quest.id}', '${quest.name}', ${quest.points || 1})">
-                    <div class="quest-info"><p class="quest-name">${quest.name}</p><p class="quest-details">${quest.schedule || 'Daily'} ${reminderHtml}</p></div>
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    ${isHaOnly
+                        ? `<span class="quest-ha-indicator" title="Completed through Home Assistant">${quest.completed ? '✅' : '⚡'}</span>`
+                        : `<input type="checkbox" class="quest-checkbox" ${quest.completed ? 'checked' : ''} ${!unlocked && quest.type === 'side' ? 'disabled' : ''} onchange="app.toggleQuest('${quest.id}', '${quest.name}', ${quest.points || 1})">`}
+                    <div class="quest-info">
+                        <p class="quest-name">${displayName}</p>
+                        ${detailsContent ? `<p class="quest-details">${detailsContent}</p>` : ''}
+                    </div>
+                    <div class="quest-pills">
                         ${bonusStarHtml}
                         <div class="pill">${quest.points || 1} pts</div>
                     </div>
@@ -938,6 +1028,7 @@
             const quest = this.quests.find(q => q.id === id);
             if (!quest) return;
             if (quest.type === 'side' && !this.sideQuestUnlock) return;
+            if (Number(quest.ha_completable)) return; // HA-only: completed via webhook only
             await this.updateMissedFlags();
             const newCompleted = !quest.completed;
             const wasCompleted = quest.completed;
@@ -955,21 +1046,23 @@
                     })
                 });
                 if (res.ok) {
+                    const result = await res.json().catch(() => ({}));
                     quest.completed = newCompleted;
+                    // Linked quests: server tells us their new reminder times (completion time + wait)
+                    (result.reminder_updates || []).forEach(u => {
+                        const lq = this.quests.find(q => q.id === u.quest_id);
+                        if (lq) lq.reminder_time = u.reminder_time;
+                    });
                     if (newCompleted) {
                         quest.missed = false;
                         this.saveLastToggle(quest.id, wasCompleted, points);
-                        if (wasMissed) {
-                            console.log('✨ Awarding bonus for:', name);
-                            this.addToHistory('bonus', `Bonus for completing missed quest: ${name}`, 1);
-                            await this.loadTodayBonusPoints();
-                            if (Notification.permission === 'granted') {
-                                new Notification('✨ Bonus Point!', {
-                                    body: `You earned +1 for completing a missed quest!`,
-                                    icon: '/favicon.ico',
-                                    tag: 'bonus-missed'
-                                });
-                            }
+                        // Bonus points for a missed quest are awarded by api.php (was_missed flag)
+                        if (wasMissed && Notification.permission === 'granted') {
+                            new Notification('✨ Bonus Point!', {
+                                body: `You earned +1 for completing a missed quest!`,
+                                icon: '/favicon.ico',
+                                tag: 'bonus-missed'
+                            });
                         }
                     }
                     await this.loadPoints();
